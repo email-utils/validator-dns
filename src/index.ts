@@ -137,7 +137,7 @@ class EmailDnsValidator {
       if (dns) {
         dns.resolve(this.domain, 'NS', async (err, addresses) => {
           if (err) {
-            console.log(this.domain, ' has no NS')
+            console.error(this.domain, ' has no NS')
             reject()
           } else if (addresses) {
             resolve(addresses)
@@ -157,7 +157,7 @@ class EmailDnsValidator {
       if (dns) {
         dns.resolve(this.domain, 'A', async (err, addresses) => {
           if (err) {
-            console.log(this.domain, ' has no NS')
+            console.error(this.domain, ' has no NS')
             reject()
           } else if (addresses) {
             resolve(addresses)
@@ -177,7 +177,7 @@ class EmailDnsValidator {
       if (dns) {
         dns.resolve(this.domain, 'MX', async (err, addresses) => {
           if (err) {
-            console.log(this.domain, ' has no MX')
+            console.error(this.domain, ' has no MX')
             reject()
           } else if (addresses) {
             resolve(addresses)
@@ -197,7 +197,7 @@ class EmailDnsValidator {
       if (dns) {
         dns.resolve(this.domain, 'TXT', async (err, addresses) => {
           if (err) {
-            console.log(this.domain, ' has no TXT')
+            console.error(this.domain, ' has no TXT')
             reject()
           } else if (addresses) {
             resolve(addresses)
@@ -248,18 +248,34 @@ class EmailDnsValidator {
   }
 
   private setEmailDetails(email: string) {
+    if (typeof email !== 'string') {
+      console.error('Email not a string.', email)
+      return false
+    } else if (!email) {
+      console.error('Email not provided.', email)
+      return false
+    }
+
     this.email = email.trim()
     this.domain = this.email.slice(this.email.indexOf('@') + 1).toLowerCase()
   }
 
   public async validate(email: string): Promise<boolean> {
-    this.setEmailDetails(email)
+    const setEmailResults = this.setEmailDetails(email)
+
+    if (setEmailResults === false) {
+      return false
+    }
 
     return await this.validateDNS()
   }
 
   public async isGSuiteMX(email: string) {
-    this.setEmailDetails(email)
+    const setEmailResults = this.setEmailDetails(email)
+
+    if (setEmailResults === false) {
+      return false
+    }
 
     let isGSuite = false
 
@@ -284,7 +300,11 @@ class EmailDnsValidator {
     return isGSuite
   }
   public async isDefaultNamecheapMX(email: string) {
-    this.setEmailDetails(email)
+    const setEmailResults = this.setEmailDetails(email)
+
+    if (setEmailResults === false) {
+      return false
+    }
 
     let isDefaultNamecheapMX = false
 
