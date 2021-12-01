@@ -118,7 +118,7 @@ class EmailDnsValidator {
                 if (dns) {
                     dns.resolve(this.domain, 'NS', (err, addresses) => __awaiter(this, void 0, void 0, function* () {
                         if (err) {
-                            console.log(this.domain, ' has no NS');
+                            console.error(this.domain, ' has no NS');
                             reject();
                         }
                         else if (addresses) {
@@ -142,7 +142,7 @@ class EmailDnsValidator {
                 if (dns) {
                     dns.resolve(this.domain, 'A', (err, addresses) => __awaiter(this, void 0, void 0, function* () {
                         if (err) {
-                            console.log(this.domain, ' has no NS');
+                            console.error(this.domain, ' has no NS');
                             reject();
                         }
                         else if (addresses) {
@@ -166,7 +166,7 @@ class EmailDnsValidator {
                 if (dns) {
                     dns.resolve(this.domain, 'MX', (err, addresses) => __awaiter(this, void 0, void 0, function* () {
                         if (err) {
-                            console.log(this.domain, ' has no MX');
+                            console.error(this.domain, ' has no MX');
                             reject();
                         }
                         else if (addresses) {
@@ -190,7 +190,7 @@ class EmailDnsValidator {
                 if (dns) {
                     dns.resolve(this.domain, 'TXT', (err, addresses) => __awaiter(this, void 0, void 0, function* () {
                         if (err) {
-                            console.log(this.domain, ' has no TXT');
+                            console.error(this.domain, ' has no TXT');
                             reject();
                         }
                         else if (addresses) {
@@ -240,18 +240,32 @@ class EmailDnsValidator {
         });
     }
     setEmailDetails(email) {
+        if (typeof email !== 'string') {
+            console.error('Email not a string.', email);
+            return false;
+        }
+        else if (!email) {
+            console.error('Email not provided.', email);
+            return false;
+        }
         this.email = email.trim();
         this.domain = this.email.slice(this.email.indexOf('@') + 1).toLowerCase();
     }
     validate(email) {
         return __awaiter(this, void 0, void 0, function* () {
-            this.setEmailDetails(email);
+            const setEmailResults = this.setEmailDetails(email);
+            if (setEmailResults === false) {
+                return false;
+            }
             return yield this.validateDNS();
         });
     }
     isGSuiteMX(email) {
         return __awaiter(this, void 0, void 0, function* () {
-            this.setEmailDetails(email);
+            const setEmailResults = this.setEmailDetails(email);
+            if (setEmailResults === false) {
+                return false;
+            }
             let isGSuite = false;
             try {
                 const addresses = yield this.getMxRecord();
@@ -273,7 +287,10 @@ class EmailDnsValidator {
     }
     isDefaultNamecheapMX(email) {
         return __awaiter(this, void 0, void 0, function* () {
-            this.setEmailDetails(email);
+            const setEmailResults = this.setEmailDetails(email);
+            if (setEmailResults === false) {
+                return false;
+            }
             let isDefaultNamecheapMX = false;
             try {
                 const addresses = yield this.getMxRecord();
