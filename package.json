@@ -1,16 +1,17 @@
 {
-  "name": "ssmith-is-valid-email",
-  "version": "v2.0.2-beta",
-  "description": "Checks to see if email is valid.",
+  "name": "@email-utils/validator-dns",
+  "version": "0.0.0",
+  "description": "Configurable email dns validator.",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
     "test": "ts-mocha test/**/*.test.ts",
-    "report-coverage": "nyc npm test"
+    "report-coverage": "nyc npm test",
+    "release": "./bin/tag.sh"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ssmith-wombatweb/is-valid-email.git"
+    "url": "git+https://github.com/email-utils/validator-dns.git"
   },
   "keywords": [
     "email",
@@ -80,8 +81,5 @@
   "prettier": {
     "semi": false,
     "singleQuote": true
-  },
-  "dependencies": {
-    "tlds": "^1.226.0"
   }
 }
