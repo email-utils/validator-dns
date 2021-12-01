@@ -1,6 +1,6 @@
 {
   "name": "@email-utils/validator-dns",
-  "version": "0.0.1-0",
+  "version": "0.0.1-1",
   "description": "Configurable email dns validator.",
   "main": "dist/index.js",
   "scripts": {
