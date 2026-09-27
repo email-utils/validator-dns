@@ -20,10 +20,10 @@ jobs:
     permissions:
       contents: read # check out the package
       pull-requests: write # comment check results on the PR
-    uses: email-utils/meta/.github/workflows/checks.yml@7449dca7ead41b31493663b0392fd61dcc36012e
+    uses: email-utils/meta/.github/workflows/checks.yml@dab4a924572fb47da3d4608b0ae68b4dde5cb5f8
 
   test:
     permissions:
       contents: read # check out the package
       pull-requests: write # comment test results on the PR
-    uses: email-utils/meta/.github/workflows/test.yml@7449dca7ead41b31493663b0392fd61dcc36012e
+    uses: email-utils/meta/.github/workflows/test.yml@dab4a924572fb47da3d4608b0ae68b4dde5cb5f8
