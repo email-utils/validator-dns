@@ -1,0 +1,10 @@
+# The pre-commit checks — the same three CI's checks legs run first.
+pre-commit:
+  parallel: true
+  commands:
+    lint:
+      run: npm run lint
+    format:
+      run: npm run format:check
+    typecheck:
+      run: npm run typecheck

@@ -2,84 +2,69 @@
   "name": "@email-utils/validator-dns",
   "version": "0.0.1-2",
   "description": "Configurable email dns validator.",
-  "main": "dist/index.js",
-  "scripts": {
-    "build": "tsc",
-    "test": "ts-mocha test/**/*.test.ts",
-    "report-coverage": "nyc npm test",
-    "release": "./bin/tag.sh"
+  "keywords": [
+    "email",
+    "email-validation",
+    "dns",
+    "mx",
+    "validator"
+  ],
+  "homepage": "https://email-utils.github.io/meta/",
+  "bugs": {
+    "url": "https://github.com/email-utils/validator-dns/issues"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/email-utils/validator-dns.git"
   },
-  "keywords": [
-    "email",
-    "valid",
-    "check"
-  ],
-  "engines": {
-    "node": "v16.13.0"
-  },
-  "author": "Simeon Smith <hello@simeonsmith.dev> (https://www.simeonsmith.dev)",
   "license": "MIT",
+  "author": "Marwynn Joynes",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.cts",
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint --type-aware",
+    "lint:fix": "oxlint --type-aware --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "bench": "vitest bench --run",
+    "check:package": "publint && attw --pack .",
+    "pre-commit": "npm run lint && npm run format:check && npm run typecheck",
+    "prepack": "npm run build"
+  },
   "devDependencies": {
-    "@types/chai": "^4.2.22",
-    "@types/mocha": "^9.0.0",
-    "@types/node": "^16.11.7",
-    "@typescript-eslint/eslint-plugin": "^5.3.1",
-    "@typescript-eslint/parser": "^5.3.1",
-    "chai": "^4.3.4",
-    "eslint": "^8.2.0",
-    "eslint-config-prettier": "^8.3.0",
-    "eslint-plugin-prettier": "^4.0.0",
-    "nyc": "^15.1.0",
-    "prettier": "^2.4.1",
-    "ts-mocha": "^8.0.0",
-    "typescript": "^4.4.4"
+    "@arethetypeswrong/cli": "^0.18.5",
+    "@types/node": "^24.0.0",
+    "@vitest/coverage-v8": "^5.0.2",
+    "lefthook": "^2.1.14",
+    "oxlint": "^1.85.0",
+    "oxlint-tsgolint": "^7.0.2003",
+    "prettier": "^3.9.9",
+    "publint": "^0.3.24",
+    "tsdown": "^0.23.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.2"
   },
-  "eslintConfig": {
-    "root": true,
-    "env": {
-      "mocha": true,
-      "browser": true,
-      "node": true,
-      "es6": true
-    },
-    "parser": "@typescript-eslint/parser",
-    "parserOptions": {
-      "ecmaVersion": 2018,
-      "sourceType": "module"
-    },
-    "extends": [
-      "prettier",
-      "plugin:prettier/recommended",
-      "eslint:recommended",
-      "plugin:@typescript-eslint/eslint-recommended",
-      "plugin:@typescript-eslint/recommended"
-    ],
-    "plugins": [
-      "@typescript-eslint",
-      "prettier"
-    ],
-    "rules": {
-      "no-unused-vars": "warn",
-      "no-prototype-builtins": "warn",
-      "curly": "warn"
-    },
-    "globals": {
-      "fetch": true
-    },
-    "ignorePatterns": [
-      "node_modules",
-      "dist",
-      "coverage",
-      ".vscode",
-      ".nyc_output"
-    ]
+  "engines": {
+    "node": ">=22"
   },
-  "prettier": {
-    "semi": false,
-    "singleQuote": true
+  "allowScripts": {
+    "lefthook": true
   }
 }
