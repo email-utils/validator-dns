@@ -1,0 +1,29 @@
+name: PR gate
+
+# The checks every PR into main runs, from meta's reusable workflows. Each
+# job must stay unconditional: a job-level `if:` that skips makes GitHub
+# report a bare name ("checks" rather than "checks / lint"), which never
+# satisfies a required check. pr-title.yml checks the title on its own.
+on:
+  pull_request:
+    branches: [main]
+
+# A newer push to the PR cancels the run it replaces.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  checks:
+    permissions:
+      contents: read # check out the package
+      pull-requests: write # comment check results on the PR
+    uses: email-utils/meta/.github/workflows/checks.yml@7449dca7ead41b31493663b0392fd61dcc36012e
+
+  test:
+    permissions:
+      contents: read # check out the package
+      pull-requests: write # comment test results on the PR
+    uses: email-utils/meta/.github/workflows/test.yml@7449dca7ead41b31493663b0392fd61dcc36012e
