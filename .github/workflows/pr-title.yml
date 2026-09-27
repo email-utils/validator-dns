@@ -1,0 +1,23 @@
+name: PR title
+
+# The title becomes the squash commit, so it must be a conventional commit.
+# Separate from pr-gate.yml because it also runs on `edited`, so fixing a
+# title rechecks it without rerunning every check, and on label changes,
+# since release-please's label exempts its release PRs.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, labeled, unlabeled]
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  pr-title:
+    permissions:
+      contents: read # check out meta's conventions file
+      pull-requests: read # read the PR's title and labels
+    uses: email-utils/meta/.github/workflows/pr-title.yml@7449dca7ead41b31493663b0392fd61dcc36012e
