@@ -1,0 +1,8 @@
+# Generated
+dist
+coverage
+.reports
+CHANGELOG.md
+
+# Machine-generated lockfile
+package-lock.json

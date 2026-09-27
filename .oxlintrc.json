@@ -1,0 +1,72 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [
+    "eslint",
+    "typescript",
+    "unicorn",
+    "oxc",
+    "import",
+    "vitest",
+    "jsdoc"
+  ],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "error"
+  },
+  "rules": {
+    "no-console": "error",
+    "eqeqeq": "error",
+    "curly": "error",
+    "typescript/no-explicit-any": "error",
+    "typescript/consistent-type-imports": "error",
+    "import/no-default-export": "off",
+    "jsdoc/check-tag-names": [
+      "error",
+      {
+        "definedTags": [
+          "packageDocumentation",
+          "remarks",
+          "typeParam",
+          "defaultValue",
+          "privateRemarks",
+          "alpha",
+          "beta",
+          "internal",
+          "sealed",
+          "virtual",
+          "label",
+          "decorator"
+        ]
+      }
+    ]
+  },
+  "ignorePatterns": ["dist", "coverage", ".reports"],
+  "overrides": [
+    {
+      "files": ["test/**/*.ts", "bench/**/*.ts"],
+      "env": {
+        "node": true
+      },
+      "rules": {
+        "no-console": "off",
+        "oxc/no-map-spread": "off"
+      }
+    },
+    {
+      "files": ["bench/**/*.ts"],
+      "rules": {
+        "vitest/expect-expect": "off"
+      }
+    },
+    {
+      "files": ["*.config.ts"],
+      "env": {
+        "node": true
+      },
+      "rules": {
+        "import/no-default-export": "off"
+      }
+    }
+  ]
+}
