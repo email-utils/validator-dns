@@ -1,0 +1,68 @@
+name: Nightly
+
+# Checks main against what a new install would get today: the lockfile is
+# dropped, so every dependency resolves to the newest version its range
+# allows, as it does for anyone installing the package. A failure here means
+# an upstream release broke something the PR gate's lockfile hid.
+on:
+  schedule:
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+
+# A manual run replaces one in progress.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  fresh-deps:
+    name: fresh-deps
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: read # check out the package
+    env:
+      # lefthook's install script would set up git hooks that never run here.
+      LEFTHOOK: 0
+    steps:
+      - name: Check out the package
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # No npm cache: it's keyed on the lockfile this job throws away.
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - name: Install the newest dependencies
+        run: |
+          rm package-lock.json
+          npm install --no-audit --no-fund
+          npm ls --depth=0
+
+      - name: Typecheck, test, build, and check the package
+        id: run
+        run: |
+          {
+            npm run typecheck &&
+              npm test &&
+              npm run build &&
+              npm run check:package
+          } 2>&1 | tee "$RUNNER_TEMP/output.log"
+
+      - name: Write job summary
+        if: always()
+        uses: email-utils/meta/.github/actions/job-summary@14230542fed91f47841fb2c423d484abe4b91b3d
+        with:
+          check-name: Fresh dependencies
+          outcome: ${{ steps.run.outcome }}
+          log-file: ${{ runner.temp }}/output.log
