@@ -20,4 +20,4 @@ jobs:
     permissions:
       contents: read # check out meta's conventions file
       pull-requests: read # read the PR's title and labels
-    uses: email-utils/meta/.github/workflows/pr-title.yml@dab4a924572fb47da3d4608b0ae68b4dde5cb5f8
+    uses: email-utils/meta/.github/workflows/pr-title.yml@e269b3ee915cc03e96c720e871126bcbdc209d88

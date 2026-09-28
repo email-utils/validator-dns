@@ -1,0 +1,29 @@
+name: Release
+
+# Keeps the release PR open, and when it merges, stages the release on npm,
+# from meta's reusable release workflow. The package's npm trusted publisher
+# names this file, so keep the name. Nothing goes live until a maintainer
+# approves the stage with 2FA; the run's summary has the stage ID.
+on:
+  push:
+    branches: [main]
+
+# Never cancelled: a cancelled run could stop between tagging a release and
+# staging it. A push during a run waits for it, and a newer push replaces the
+# waiting run, which is fine: each run reads main as it is.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  release:
+    permissions:
+      contents: write # attach the benchmark results to the GitHub release
+      id-token: write # npm trusted publishing and provenance
+    uses: email-utils/meta/.github/workflows/release.yml@e269b3ee915cc03e96c720e871126bcbdc209d88
+    with:
+      app-client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+    secrets:
+      app-private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
