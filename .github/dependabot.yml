@@ -1,0 +1,34 @@
+# npm only. The package's workflows are synced from meta, so their action
+# pins are bumped there, by meta's own Dependabot, and reach the package
+# through the next sync.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    # Dependabot allows one entry per ecosystem and directory, so the daily
+    # `@email-utils/*` group and the weekly pace for everything else share
+    # it: everything else waits out a 7-day cooldown, which also keeps a
+    # freshly published, possibly compromised release out.
+    schedule:
+      interval: daily
+    cooldown:
+      default-days: 7
+      exclude:
+        - '@email-utils/*'
+    # fix(deps) for runtime dependencies, so a bump ships in a release;
+    # chore(deps-dev) for tooling.
+    commit-message:
+      prefix: fix
+      prefix-development: chore
+      include: scope
+    groups:
+      # Auto-merged by dependabot-auto-merge.yml, majors excepted.
+      email-utils:
+        patterns:
+          - '@email-utils/*'
+      dev-tooling:
+        dependency-type: development
+    ignore:
+      # Tracks the development Node in .nvmrc, so majors move with it.
+      - dependency-name: '@types/node'
+        update-types: [version-update:semver-major]

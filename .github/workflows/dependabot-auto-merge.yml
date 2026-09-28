@@ -1,0 +1,40 @@
+name: Dependabot auto-merge
+
+# Queues Dependabot's daily `@email-utils/*` group to merge once the PR gate
+# passes, so a fix in one package reaches its dependents without waiting on
+# anyone. Major bumps are breaking, so they wait for a person, as does every
+# other Dependabot PR.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  auto-merge:
+    name: auto-merge
+    # The PR's author, not github.actor, which is whoever last pushed.
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: write # merge the PR
+      pull-requests: write # enable auto-merge on the PR
+    steps:
+      - name: Read the update
+        id: metadata
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+
+      - name: Enable auto-merge
+        if: >-
+          steps.metadata.outputs.dependency-group == 'email-utils' &&
+          steps.metadata.outputs.update-type != 'version-update:semver-major'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --squash "$PR_URL"
