@@ -1,0 +1,14 @@
+{
+  "extraKnownMarketplaces": {
+    "email-utils": {
+      "source": {
+        "source": "github",
+        "repo": "email-utils/meta"
+      },
+      "autoUpdate": true
+    }
+  },
+  "enabledPlugins": {
+    "email-utils@email-utils": true
+  }
+}
