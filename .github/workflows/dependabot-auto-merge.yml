@@ -4,6 +4,10 @@ name: Dependabot auto-merge
 # passes, so a fix in one package reaches its dependents without waiting on
 # anyone. Major bumps are breaking, so they wait for a person, as does every
 # other Dependabot PR.
+#
+# Also retitles a bump of vendored data, which the build inlines into the
+# published package, from chore(deps-dev) to fix(data), so the squash commit
+# cuts a release. dependabot.yml gives each of these a PR of its own.
 on:
   pull_request:
     types: [opened, synchronize, reopened]
@@ -38,3 +42,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: gh pr merge --auto --squash "$PR_URL"
+
+  retitle-vendored-data:
+    name: retitle vendored data
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      startsWith(github.event.pull_request.title, 'chore(deps-dev): bump tlds from ')
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write # edit the PR's title
+    steps:
+      - name: Retitle to fix(data)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          gh api -X PATCH "repos/$REPO/pulls/$PR_NUMBER" \
+            -f title="fix(data): ${TITLE#'chore(deps-dev): '}" --jq .title

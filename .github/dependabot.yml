@@ -28,6 +28,11 @@ updates:
           - '@email-utils/*'
       dev-tooling:
         dependency-type: development
+        # Vendored data the build inlines, so a bump changes the published
+        # package. It gets a PR of its own, which dependabot-auto-merge.yml
+        # retitles to fix(data) so it ships.
+        exclude-patterns:
+          - tlds
     ignore:
       # Tracks the development Node in .nvmrc, so majors move with it.
       - dependency-name: '@types/node'
