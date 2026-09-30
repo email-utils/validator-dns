@@ -153,7 +153,7 @@ function unparsable(result: unknown): boolean {
   );
 }
 
-// Past the 512-character cap on the input, from just over it to 8 MB.
+// Past the default 512-character cap on the input, from just over it to 8 MB.
 const oversizes = [513, 1024, 4096, 65_536, 1_048_576, 8_388_608];
 const oversized: readonly [string, (n: number) => string][] = [
   ['an address', (n) => fill('', 'a', '@example.com', n)],

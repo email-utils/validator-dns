@@ -1,10 +1,10 @@
 // validator-dns#11's deterministic budgets: time that doesn't depend on the
-// runner's speed, or only loosely. Input past the 512-character cap is
-// rejected in constant time, unread and with no lookup; time grows linearly
-// with the input up to the cap, and with the answers; and no generated
-// input takes long. test/budgets.worker.ts does the timing, in a thread v8
-// coverage doesn't instrument, against the fakes; this checks what it
-// measured.
+// runner's speed, or only loosely. Input past the default 512-character cap
+// is rejected in constant time, unread and with no lookup; time grows
+// linearly with the input up to the cap, and with the answers; and no
+// generated input takes long. test/budgets.worker.ts does the timing, in a
+// thread v8 coverage doesn't instrument, against the fakes; this checks
+// what it measured.
 import { Worker } from 'node:worker_threads';
 import { describe, expect, it } from 'vitest';
 import type { Report } from './budgets.worker';

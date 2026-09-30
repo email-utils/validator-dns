@@ -64,7 +64,8 @@ export interface DnsOptions {
   /**
    * How an address or domain is parsed before any lookup. `allowIdn` is on
    * unless you turn it off or pick the `html5` preset, which can't hold IDN
-   * domains.
+   * domains. `maxLength` caps the input before it's trimmed, so longer
+   * input fails unread.
    *
    * @defaultValue the validator-syntax `practical` preset with `allowIdn`
    */
