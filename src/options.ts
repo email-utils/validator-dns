@@ -82,7 +82,9 @@ export interface DnsOptions {
    * The model {@link scoreDns} scores with: one of the two bundled fits by
    * name — `'dns-reachability'`, which counts an MX the classifier's
    * provider registry knows, or `'dns-only'`, which reads the DNS signals
-   * alone — or a model of your own, whose calibration is then yours.
+   * alone — or a model of your own, whose calibration is then yours. Its
+   * intercept and coefficients must be within ±1e6, far past any fitted
+   * model's, so the log-odds can't overflow to `NaN`.
    *
    * @defaultValue `'dns-reachability'`
    */

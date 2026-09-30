@@ -17,7 +17,8 @@ export type ScoreFeature = keyof DnsSignals | 'knownProvider' | 'multipleMx';
  * A fitted logistic model: the log-odds of acceptance are `intercept` plus
  * each coefficient times its feature's value. A `true` signal is 1, and a
  * `false` or `undefined` one (a failed lookup) is 0; `mxHosts` is the
- * number of hosts, and `knownProvider` and `multipleMx` are 1 or 0.
+ * number of hosts, and `knownProvider` and `multipleMx` are 1 or 0. The
+ * intercept and each coefficient are within ±1e6.
  */
 export interface DnsScoreModel {
   id: string;
@@ -71,9 +72,22 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * The largest intercept or coefficient, either side of 0, a model may have.
+ * A fitted model's are single digits. Within it, the log-odds stay finite
+ * even for billions of MX hosts, so no term overflows to `Infinity` and
+ * meets another at `-Infinity` as `NaN`.
+ */
+const MAX_WEIGHT = 1e6;
+
+function isWeight(value: unknown): value is number {
+  return typeof value === 'number' && Math.abs(value) <= MAX_WEIGHT;
+}
+
+/**
  * Checks `model` and copies it, so a caller's later changes can't reach it.
  *
- * @throws TypeError when it's malformed.
+ * @throws TypeError when it's malformed, or its intercept or a coefficient
+ * is outside ±1e6.
  */
 export function checkModel(model: unknown, name: string): DnsScoreModel {
   if (!isObject(model)) {
@@ -88,8 +102,10 @@ export function checkModel(model: unknown, name: string): DnsScoreModel {
       `Expected \`${name}.version\` to be a non-empty string`,
     );
   }
-  if (typeof intercept !== 'number' || !Number.isFinite(intercept)) {
-    throw new TypeError(`Expected \`${name}.intercept\` to be a finite number`);
+  if (!isWeight(intercept)) {
+    throw new TypeError(
+      `Expected \`${name}.intercept\` to be a number from -1e6 to 1e6`,
+    );
   }
   if (!isObject(coefficients)) {
     throw new TypeError(`Expected \`${name}.coefficients\` to be an object`);
@@ -102,9 +118,9 @@ export function checkModel(model: unknown, name: string): DnsScoreModel {
         `Expected \`${name}.coefficients\` to hold only ${features.join(', ')}, not ${key}`,
       );
     }
-    if (typeof value !== 'number' || !Number.isFinite(value)) {
+    if (!isWeight(value)) {
       throw new TypeError(
-        `Expected \`${name}.coefficients.${key}\` to be a finite number`,
+        `Expected \`${name}.coefficients.${key}\` to be a number from -1e6 to 1e6`,
       );
     }
     checked[known] = value;

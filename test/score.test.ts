@@ -174,9 +174,23 @@ describe('the model', () => {
     ['coefficients that aren’t an object', { ...model, coefficients: null }],
     ['a coefficient for no feature', { ...model, coefficients: { hasNs: 1 } }],
     ['a NaN coefficient', { ...model, coefficients: { hasMx: Number.NaN } }],
+    ['an intercept past 1e6', { ...model, intercept: 1e308 }],
+    ['a coefficient below -1e6', { ...model, coefficients: { mxHosts: -2e6 } }],
   ])('throws a TypeError for %s', (_, scoreModel) => {
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion
     expect(() => validator({ scoreModel } as never)).toThrow(TypeError);
+  });
+
+  it('takes an intercept and coefficients of ±1e6', async () => {
+    zone.set('example.com', { MX: mx('mx1.example.com', 'mx2.example.com') });
+    const scored = await validator({
+      scoreModel: {
+        ...model,
+        intercept: 1e6,
+        coefficients: { hasMx: 1e6, mxHosts: -1e6 },
+      },
+    }).score('example.com');
+    expect(scored).toMatchObject({ value: { probability: logistic(0) } });
   });
 
   it('throws a TypeError for a name that isn’t bundled', () => {

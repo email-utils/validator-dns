@@ -17,6 +17,7 @@ import {
   probeSmtp,
   type ReasonCode,
   type Result,
+  type ScoreFeature,
   scoreDns,
   type SmtpOutcome,
 } from '../src';
@@ -489,16 +490,13 @@ describe('a model of the caller’s own', () => {
     ),
   });
 
-  // Found by this suite, not yet fixed: checkModel takes any finite
-  // coefficients, but the log-odds sum can overflow to Infinity and then
-  // meet -Infinity. With two MX hosts, the intercept and hasMx overflow to
-  // Infinity and mxHosts contributes 2 × -1e308 = -Infinity: NaN, not a
-  // probability in [0, 1]. Drop `.fails` once the score guards against it.
-  it.fails(
-    'scores a probability in [0, 1] from finite coefficients that overflow',
-    async () => {
-      zone.set(home, { MX: mx('mx1.example.com', 'mx2.example.com') });
-      const scored = await createDnsValidator({
+  // Found by this suite (validator-dns#30): with two MX hosts, an intercept
+  // and hasMx of 1e308 overflowed to Infinity and an mxHosts of -1e308 gave
+  // -Infinity, so the probability was NaN. checkModel now bounds each to
+  // ±1e6, which the property below reaches.
+  it('throws a TypeError for coefficients that overflow', () => {
+    expect(() =>
+      createDnsValidator({
         resolver: promises,
         scoreModel: {
           id: 'mine',
@@ -506,12 +504,42 @@ describe('a model of the caller’s own', () => {
           intercept: 1e308,
           coefficients: { hasMx: 1e308, mxHosts: -1e308 },
         },
-      }).score(home);
-      expect(scored.ok && scored.value.probability).toSatisfy(inUnit);
-    },
-  );
+      }),
+    ).toThrow(TypeError);
+  });
 
-  it('scores a probability in [0, 1] from coefficients in a fitted range', async () => {
+  it('throws a TypeError for any intercept or coefficient past ±1e6', () => {
+    const past = fc.oneof(
+      fc.double({ min: 1e6, minExcluded: true, noNaN: true }),
+      fc.double({ max: -1e6, maxExcluded: true, noNaN: true }),
+    );
+    fc.assert(
+      fc.property(
+        model,
+        fc.constantFrom<'intercept' | ScoreFeature>(
+          'intercept',
+          'hasMx',
+          'mxHosts',
+          'multipleMx',
+        ),
+        past,
+        (scoreModel, key, value) => {
+          const bad =
+            key === 'intercept'
+              ? { ...scoreModel, intercept: value }
+              : {
+                  ...scoreModel,
+                  coefficients: { ...scoreModel.coefficients, [key]: value },
+                };
+          expect(() =>
+            createDnsValidator({ resolver: promises, scoreModel: bad }),
+          ).toThrow(TypeError);
+        },
+      ),
+    );
+  });
+
+  it('scores a probability in [0, 1] from any coefficients within ±1e6', async () => {
     await fc.assert(
       fc.asyncProperty(records, model, async (answered, scoreModel) => {
         reset();
