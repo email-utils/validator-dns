@@ -1,6 +1,6 @@
-// The 0.0.1 behaviors validator-dns#7 changed, each pinned twice: what the
+// The 0.0.1 behaviors validator-dns#7 and #9 changed, each pinned twice: what the
 // 0.0.1 class returned, checked against it here so each case keeps showing
-// what it was, and what checkDns returns now. Each case checks with a fresh
+// what it was, and what checkDns or detectProviderByMx returns now. Each case checks with a fresh
 // validator, since checkDns keeps answers in a cache every call shares.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDnsValidator, type DnsSignals, type Result } from '../src';
@@ -33,6 +33,10 @@ async function checkDns(input: string): Promise<Result<DnsSignals>> {
 
 async function isValidDns(input: string): Promise<boolean> {
   return (await checkDns(input)).ok;
+}
+
+async function detectProviderByMx(input: string) {
+  return createDnsValidator({ resolver: promises }).detectProviderByMx(input);
 }
 
 // The 0.0.1 config that scores MX alone, for the cases about MX.
@@ -153,5 +157,42 @@ describe('the input is parsed before any lookup', () => {
       reason: 'dns.address.unparsable',
     });
     await expect(checkDns(notString)).rejects.toThrow(TypeError);
+  });
+});
+
+describe('providers are detected from the classifier’s registry', () => {
+  it('Google’s single MX, smtp.google.com, is Google Workspace', async () => {
+    zone.set('example.com', { MX: mx('smtp.google.com') });
+    expect(await new EmailDnsValidator().isGSuiteMX('ada@example.com')).toBe(
+      false,
+    );
+    expect(await detectProviderByMx('ada@example.com')).toEqual({
+      ok: true,
+      value: 'google-workspace',
+    });
+  });
+
+  it('an MX host that only contains a pattern matches nothing', async () => {
+    zone.set('example.com', {
+      MX: mx('aspmx.l.google.com.example.net', 'registrar-servers.com'),
+    });
+    const legacy = new EmailDnsValidator();
+    expect(await legacy.isGSuiteMX('ada@example.com')).toBe(true);
+    expect(await legacy.isDefaultNamecheapMX('ada@example.com')).toBe(true);
+    expect(await detectProviderByMx('ada@example.com')).toEqual({
+      ok: true,
+      value: undefined,
+    });
+  });
+
+  it('a failed MX lookup is a failure, not “no provider”', async () => {
+    zone.set('example.com', { MX: { error: 'ESERVFAIL' } });
+    expect(await new EmailDnsValidator().isGSuiteMX('ada@example.com')).toBe(
+      false,
+    );
+    expect(await detectProviderByMx('ada@example.com')).toMatchObject({
+      ok: false,
+      reason: 'dns.lookup.failed',
+    });
   });
 });
