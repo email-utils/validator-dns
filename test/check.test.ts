@@ -29,6 +29,9 @@ async function isValidDns(
 
 const unparsable = { ok: false, reason: 'dns.address.unparsable' };
 
+/** A valid address, after enough spaces to make `length` characters. */
+const padded = (length: number): string => 'ada@example.com'.padStart(length);
+
 /** The signals `checkDns` finds, or a thrown error if it fails. */
 async function signals(input: string): Promise<DnsSignals> {
   const result = await checkDns(input);
@@ -158,6 +161,64 @@ describe('the signals', () => {
     ]);
   });
 
+  // Out of order, with ties, and a host twice at different preferences.
+  const tied = [
+    { exchange: 'c.example.com', priority: 10 },
+    { exchange: 'a.example.com', priority: 10 },
+    { exchange: 'b.example.com', priority: 5 },
+    { exchange: 'A.example.com.', priority: 20 },
+    { exchange: 'd.example.com', priority: 10 },
+  ];
+  const tiedHosts = [
+    'b.example.com',
+    'c.example.com',
+    'a.example.com',
+    'd.example.com',
+  ];
+
+  it('keeps hosts of equal preference in the order they came in, looked up or cached', async () => {
+    zone.set('example.com', { MX: tied });
+    const validator = dns.createDnsValidator({ resolver: promises });
+    const looked = await validator.check('ada@example.com');
+    const cached = await validator.check('ada@example.com');
+    expect(looked).toMatchObject({ ok: true, value: { mxHosts: tiedHosts } });
+    expect(cached).toEqual(looked);
+    expect(queries.filter((query) => query.startsWith('MX'))).toEqual([
+      'MX example.com',
+    ]);
+  });
+
+  it('keeps them so for a resolver that answers with the same array each time', async () => {
+    const answer = tied.map((record) => ({ ...record }));
+    const validator = dns.createDnsValidator({
+      resolver: { ...promises, resolveMx: async () => answer },
+      cacheTtl: 0,
+    });
+    for (let i = 0; i < 2; i++) {
+      // oxlint-disable-next-line no-await-in-loop -- one check after another
+      expect(await validator.check('ada@example.com')).toMatchObject({
+        ok: true,
+        value: { mxHosts: tiedHosts },
+      });
+    }
+    // Sorted as a copy: the resolver's answer is left as it was.
+    expect(answer).toEqual(tied);
+  });
+
+  it('gives every check hosts of its own, so changing them changes no other', async () => {
+    zone.set('example.com', { MX: mx('mx1.example.com', 'mx2.example.com') });
+    const validator = dns.createDnsValidator({ resolver: promises });
+    const first = await validator.check('ada@example.com');
+    if (first.ok) {
+      first.value.mxHosts.reverse();
+      first.value.mxHosts.push('changed.example.com');
+    }
+    expect(await validator.check('ada@example.com')).toMatchObject({
+      ok: true,
+      value: { mxHosts: ['mx1.example.com', 'mx2.example.com'] },
+    });
+  });
+
   it.each([
     ['one chunk', [['v=spf1 include:_spf.example.com ~all']], true],
     ['split chunks', [['v=spf1 include:_spf.exa', 'mple.com ~all']], true],
@@ -217,6 +278,18 @@ describe('the input', () => {
     ['an unknown TLD', 'ada@example.invalidtld'],
   ])('fails %s without a lookup', async (_, input) => {
     expect(await checkDns(input)).toMatchObject(unparsable);
+    expect(queries).toEqual([]);
+  });
+
+  it('fails input past 512 characters unread, and reads it up to there', async () => {
+    zone.set('example.com', { MX: mx('mx.example.com') });
+    expect(await isValidDns(padded(512))).toBe(true);
+    expect(queries).toContain('MX example.com');
+    reset();
+    expect(await checkDns(padded(513))).toEqual({
+      ...unparsable,
+      message: 'The input is longer than 512 characters',
+    });
     expect(queries).toEqual([]);
   });
 

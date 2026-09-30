@@ -1,16 +1,20 @@
 import { test } from 'vitest';
-import { createDnsValidator } from '../src';
+import type { DnsResolver } from '../src';
+import { dns } from './built';
 
-// validator-dns#8 targets 2 µs for a check whose answers are all cached. The
-// gate arrives with the performance work (validator-dns#11).
-const validator = createDnsValidator({
-  resolver: {
-    resolveMx: async () => [{ exchange: 'mx.example.com', priority: 10 }],
-    resolve4: async () => ['192.0.2.1'],
-    resolve6: async () => [],
-    resolveTxt: async () => [['v=spf1 -all']],
-  },
-});
+const { createDnsValidator } = dns;
+
+// A stub, so what's timed is the package's own work, never DNS.
+const resolver: DnsResolver = {
+  resolveMx: async () => [{ exchange: 'mx.example.com', priority: 10 }],
+  resolve4: async () => ['192.0.2.1'],
+  resolve6: async () => [],
+  resolveTxt: async () => [['v=spf1 -all']],
+};
+
+// validator-dns#8 targets 2 µs for a check whose answers are all cached, a
+// target for the nightly job (email-utils/meta#21), not the PR gate.
+const validator = createDnsValidator({ resolver });
 
 test('a cache hit', async ({ bench }) => {
   await validator.check('ada@example.com');
@@ -19,5 +23,27 @@ test('a cache hit', async ({ bench }) => {
   }).run();
   await bench('bare domain', async () => {
     await validator.check('example.com');
+  }).run();
+});
+
+// No target: a miss is the four lookups' own time, and the budgets they
+// race. With `cacheTtl: 0` every check misses.
+const uncached = createDnsValidator({ resolver, cacheTtl: 0 });
+
+test('a cache miss', async ({ bench }) => {
+  await bench('address', async () => {
+    await uncached.check('ada@example.com');
+  }).run();
+});
+
+// validator-dns#8: a thousand concurrent checks of one domain make one
+// lookup per record type. No time target; this tracks what joining costs.
+test('in-flight dedupe', async ({ bench }) => {
+  await bench('1,000 concurrent checks of one domain', async () => {
+    await Promise.all(
+      Array.from({ length: 1000 }, async () =>
+        uncached.check('ada@example.com'),
+      ),
+    );
   }).run();
 });

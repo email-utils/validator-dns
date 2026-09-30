@@ -63,10 +63,26 @@ const spf = /^v=spf1(?: |$)/i;
 const notHostname = /[^\da-z.\-\u0080-\u{10ffff}]/iu;
 
 /**
+ * The longest input read: validator-syntax's default `maxLength` from its
+ * next release, and twice the 254-character address cap, which leaves room
+ * for comments and folding whitespace that don't count toward it. Longer
+ * input is rejected unread, so its size costs nothing (validator-dns#11).
+ * The `syntax` options reach validator-syntax as given, so once its
+ * `maxLength` ships this can follow that option instead.
+ */
+const maxInput = 512;
+
+/**
  * The domain to look up for `input`, as A-labels, or why there's none.
  * A string without an `@` is taken as a bare domain.
  */
 function target(input: string, rules: Readonly<Rules>): string | Failure {
+  if (input.length > maxInput) {
+    return fail(
+      'dns.address.unparsable',
+      `The input is longer than ${maxInput} characters`,
+    );
+  }
   const text = input.trim();
   const parsed = rules.syntax.parse(
     text === '' || text.includes('@') ? text : `x@${text}`,
@@ -222,23 +238,42 @@ function begin(
   return signals;
 }
 
+/** An MX answer's hosts, as {@link hostsOf} works them out. */
+interface Hosts {
+  /** Shared by every check of the answer: copy before handing it out. */
+  mxHosts: readonly string[];
+  nullMx: boolean;
+}
+
+// Each MX answer's hosts, worked out on first use and kept as long as the
+// answer is: a cached answer is sorted and lowercased once, not on every
+// check of it, which with thousands of hosts made each check's time grow
+// faster than the hosts did (validator-dns#11).
+const hostsByAnswer = new WeakMap<Lookup<'MX'>, Hosts>();
+
 /**
  * The MX hosts, lowercased and without the trailing dot, in preference
- * order, and whether a Null MX was among them.
+ * order, and whether a Null MX was among them. Hosts of equal preference
+ * keep the order the resolver gave them in, and a host listed twice keeps
+ * its first place.
  */
-function hostsOf(records: readonly { exchange: string; priority: number }[]): {
-  mxHosts: string[];
-  nullMx: boolean;
-} {
-  const sorted = [...records];
+function hostsOf(answer: Extract<Lookup<'MX'>, { ok: true }>): Readonly<Hosts> {
+  const known = hostsByAnswer.get(answer);
+  if (known !== undefined) {
+    return known;
+  }
+  const sorted = [...answer.records];
   // A copy, so sort is safe; toSorted is ES2023, past the ES2022 target.
+  // Array sorts are stable, so ties keep the resolver's order.
   // oxlint-disable-next-line unicorn/no-array-sort
   sorted.sort((x, y) => x.priority - y.priority);
   const hosts = sorted.map(({ exchange }) =>
     exchange.toLowerCase().replace(/\.$/, ''),
   );
   const mxHosts = [...new Set(hosts.filter((host) => host !== ''))];
-  return { mxHosts, nullMx: mxHosts.length < hosts.length };
+  const found = { mxHosts, nullMx: mxHosts.length < hosts.length };
+  hostsByAnswer.set(answer, found);
+  return found;
 }
 
 /** Whether the domain can receive mail, from its answers. */
@@ -249,7 +284,7 @@ function judge([mx, a, aaaa, txt]: Answers): Result<DnsSignals> {
   if (!mx.ok) {
     return failed(mx);
   }
-  const { mxHosts, nullMx } = hostsOf(mx.records);
+  const { mxHosts, nullMx } = hostsOf(mx);
   if (nullMx && mxHosts.length === 0) {
     return fail(
       'dns.mx.null',
@@ -284,7 +319,8 @@ function judge([mx, a, aaaa, txt]: Answers): Result<DnsSignals> {
       hasSpf: txt.ok
         ? txt.records.some((chunks) => spf.test(chunks.join('')))
         : undefined,
-      mxHosts,
+      // A copy: the hosts are shared by every check of the answer.
+      mxHosts: [...mxHosts],
     },
   };
 }
@@ -391,6 +427,6 @@ export async function detect(
         )
       : pending;
   return mx.ok
-    ? { ok: true, value: matchProvider(hostsOf(mx.records).mxHosts) }
+    ? { ok: true, value: matchProvider(hostsOf(mx).mxHosts) }
     : failed(mx);
 }

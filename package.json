@@ -43,8 +43,8 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "bench": "vitest bench --run",
-    "check:package": "publint && attw --pack .",
+    "bench": "npm run build && vitest bench --run",
+    "check:package": "publint && attw --pack . && size-limit && node scripts/import-cost.ts",
     "corpus": "npm run build && node scripts/corpus.ts",
     "fit": "node scripts/fit.ts",
     "pre-commit": "npm run lint && npm run format:check && npm run typecheck",
@@ -52,6 +52,7 @@
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
+    "@size-limit/preset-small-lib": "^14.1.0",
     "@types/node": "^24.0.0",
     "@vitest/coverage-v8": "^5.0.2",
     "fast-check": "^4.10.2",
@@ -60,8 +61,10 @@
     "oxlint-tsgolint": "^7.0.2003",
     "prettier": "^3.9.9",
     "publint": "^0.3.24",
+    "size-limit": "^14.1.0",
     "tsdown": "^0.23.0",
     "typescript": "^7.0.2",
+    "validator-dns-0.0.1": "npm:@email-utils/validator-dns@0.0.1-2",
     "vitest": "^5.0.2"
   },
   "engines": {
