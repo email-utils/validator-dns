@@ -1,222 +1,68 @@
-// VALID EMAIL
-// Attempting to follow rules from https://en.wikipedia.org/wiki/Email_address.
-// Checks if the email is valid.
-import * as dns from 'node:dns';
-import type { MxRecord } from 'node:dns';
-import * as net from 'node:net';
-import type { DnsConfig, DnsParam } from './types';
+/**
+ * Can the domain receive mail? One round of MX, A, AAAA, and TXT lookups,
+ * judged by RFC rules, with everything learned reported as signals.
+ *
+ * @packageDocumentation
+ */
+import { check, type DnsSignals } from './check';
+import { type DnsOptions, resolve, type Rules } from './options';
+import type { Result } from './result';
 
-class EmailDnsValidator {
-  defaultConfig: DnsConfig = {
-    a: 1,
-    ns: 100,
-    spf: 10,
-    mx: 100,
-    port: 10,
-    validScore: 310,
-    smtpPorts: [25, 465, 587],
-  };
-  // Add in domain allow list.
-  config: DnsConfig = this.defaultConfig;
-  email = '';
-  domain = '';
+export type { DnsSignals } from './check';
+export type { DnsOptions } from './options';
+export type { ReasonCode, Result } from './result';
 
-  constructor(configParam: DnsParam = {}) {
-    Object.assign(this.config, configParam);
-  }
-  private async validateDNS(): Promise<boolean> {
-    let dnsValidationFail = false;
+let defaults: Rules | undefined;
 
-    let score = 0;
-    const promises: Promise<void>[] = [];
-
-    if (this.config.ns !== -1) {
-      promises.push(
-        this.getNsRecord()
-          .then((addresses) => {
-            if (addresses.length) {
-              score += this.config.ns;
-            }
-          })
-          .catch(() => {
-            dnsValidationFail = true;
-          }),
-      );
-    }
-
-    if (this.config.mx !== -1) {
-      // Grab MX records.
-      promises.push(
-        this.getMxRecord()
-          .then((addresses) => {
-            if (addresses.length) {
-              score += this.config.mx;
-              if (this.config.port !== -1) {
-                // Check ports on MX records.
-                for (const port of this.config.smtpPorts) {
-                  for (const { exchange: host } of addresses) {
-                    // 0.0.1 behavior, bug included: these are pushed after
-                    // Promise.all below has already read the array, so they
-                    // are never awaited (validator-dns#7).
-                    promises.push(
-                      this.isPortReachable(port, { host }).then((reachable) => {
-                        if (reachable) {
-                          score += this.config.port;
-                        }
-                      }),
-                    );
-                  }
-                }
-              }
-            }
-          })
-          .catch(() => {
-            dnsValidationFail = true;
-          }),
-      );
-    }
-
-    if (this.config.spf !== -1) {
-      // Grab TXT records and check for spf.
-      promises.push(
-        this.getTxtRecord()
-          .then((records) => {
-            for (const chunks of records) {
-              // 0.0.1 behavior, bug included: `chunks` is the record's string
-              // array, so this only matches a chunk that is exactly 'spf'
-              // (validator-dns#7).
-              if (chunks.indexOf('spf') !== -1) {
-                score += this.config.spf;
-                break;
-              }
-            }
-          })
-          .catch(() => {}),
-      );
-    }
-
-    if (this.config.a !== -1) {
-      promises.push(
-        this.getARecord()
-          .then((addresses) => {
-            if (addresses.length) {
-              score += this.config.a;
-            }
-          })
-          .catch(() => {}),
-      );
-    }
-
-    await Promise.all(promises);
-
-    if (dnsValidationFail) {
-      return false;
-    }
-
-    return this.config.validScore <= score;
-  }
-
-  private getNsRecord(): Promise<string[]> {
-    return new Promise((resolve, reject) => {
-      dns.resolve(this.domain, 'NS', (err, addresses) =>
-        err ? reject(err) : resolve(addresses),
-      );
-    });
-  }
-
-  private getARecord(): Promise<string[]> {
-    return new Promise((resolve, reject) => {
-      dns.resolve(this.domain, 'A', (err, addresses) =>
-        err ? reject(err) : resolve(addresses),
-      );
-    });
-  }
-
-  private getMxRecord(): Promise<MxRecord[]> {
-    return new Promise((resolve, reject) => {
-      dns.resolve(this.domain, 'MX', (err, addresses) =>
-        err ? reject(err) : resolve(addresses),
-      );
-    });
-  }
-
-  private getTxtRecord(): Promise<string[][]> {
-    return new Promise((resolve, reject) => {
-      dns.resolve(this.domain, 'TXT', (err, addresses) =>
-        err ? reject(err) : resolve(addresses),
-      );
-    });
-  }
-
-  private isPortReachable(
-    port: number,
-    { host, timeout = 500 }: { host: string; timeout?: number },
-  ): Promise<boolean> {
-    return new Promise((resolve) => {
-      const socket = new net.Socket();
-
-      const onError = () => {
-        socket.destroy();
-        resolve(false);
-      };
-
-      socket.setTimeout(timeout);
-      socket.once('error', onError);
-      socket.once('timeout', onError);
-
-      socket.connect(port, host, () => {
-        socket.end();
-        resolve(true);
-      });
-    });
-  }
-
-  private setEmailDetails(email: string): boolean {
-    if (typeof email !== 'string' || !email) {
-      return false;
-    }
-
-    this.email = email.trim();
-    this.domain = this.email.slice(this.email.indexOf('@') + 1).toLowerCase();
-    return true;
-  }
-
-  public async validate(email: string): Promise<boolean> {
-    if (!this.setEmailDetails(email)) {
-      return false;
-    }
-
-    return await this.validateDNS();
-  }
-
-  private async hasMxMatching(
-    email: string,
-    pattern: string,
-  ): Promise<boolean> {
-    if (!this.setEmailDetails(email)) {
-      return false;
-    }
-
-    try {
-      const addresses = await this.getMxRecord();
-      return addresses.some(({ exchange }) =>
-        exchange.toLowerCase().includes(pattern),
-      );
-    } catch {
-      return false;
-    }
-  }
-
-  // 0.0.1 behavior: misses Google's newer single MX, smtp.google.com
-  // (validator-dns#9).
-  public isGSuiteMX(email: string): Promise<boolean> {
-    return this.hasMxMatching(email, 'aspmx.l.google.com');
-  }
-
-  public isDefaultNamecheapMX(email: string): Promise<boolean> {
-    return this.hasMxMatching(email, 'registrar-servers.com');
-  }
+/**
+ * Looks up the domain of `emailOrDomain` and checks it can receive mail:
+ * it has MX records, or A/AAAA records that serve as the implicit MX (RFC
+ * 5321 §5.1), and doesn't publish a Null MX (RFC 7505).
+ *
+ * @remarks
+ * The input is trimmed and parsed with the `syntax` options first, and
+ * input that doesn't parse, or has a domain literal, fails with
+ * `dns.address.unparsable` before any lookup. A string without an `@` is
+ * taken as a bare domain. IDN domains are looked up by their A-labels.
+ *
+ * MX, A, AAAA, and TXT are looked up at once. Only a failed lookup the
+ * answer rests on fails the check: MX, and A/AAAA when there's no MX. Any
+ * other failed lookup leaves its signal `undefined` rather than `false`.
+ *
+ * @example
+ * ```ts
+ * const result = await checkDns('ada@example.com');
+ * if (result.ok) {
+ *   result.value; // { hasMx: true, nullMx: false, implicitMx: false, hasSpf: true, … }
+ * } else {
+ *   result.reason; // e.g. 'dns.mx.null' or 'dns.lookup.timeout'
+ * }
+ *
+ * await checkDns('bücher.de'); // looks up xn--bcher-kva.de
+ * ```
+ *
+ * @throws TypeError, as a rejection, when `emailOrDomain` isn't a string,
+ * or `options` are malformed.
+ */
+export async function checkDns(
+  emailOrDomain: string,
+  options?: DnsOptions,
+): Promise<Result<DnsSignals>> {
+  const rules =
+    options === undefined ? (defaults ??= resolve()) : resolve(options);
+  return check(emailOrDomain, rules);
 }
 
-export default EmailDnsValidator;
-export type { DnsConfig, DnsParam } from './types';
+/**
+ * Whether the domain of `emailOrDomain` can receive mail: exactly
+ * `(await checkDns(emailOrDomain, options)).ok`.
+ *
+ * @throws TypeError, as a rejection, when `emailOrDomain` isn't a string,
+ * or `options` are malformed.
+ */
+export async function isValidDns(
+  emailOrDomain: string,
+  options?: DnsOptions,
+): Promise<boolean> {
+  return (await checkDns(emailOrDomain, options)).ok;
+}
