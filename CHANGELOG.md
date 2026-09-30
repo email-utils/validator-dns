@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-rc.2](https://github.com/email-utils/validator-dns/compare/v1.0.0-rc.1...v1.0.0-rc.2) (2026-09-30)
+
+
+### Bug Fixes
+
+* follow syntax.maxLength instead of a fixed 512 ([#37](https://github.com/email-utils/validator-dns/issues/37)) ([1e63988](https://github.com/email-utils/validator-dns/commit/1e6398806d71b161741e6232198e45a74fdbd674))
+
 ## [1.0.0-rc.1](https://github.com/email-utils/validator-dns/compare/v1.0.0-rc.0...v1.0.0-rc.1) (2026-09-30)
 
 
