@@ -1,10 +1,13 @@
 /**
  * Can the domain receive mail? One round of MX, A, AAAA, and TXT lookups,
- * judged by RFC rules, with everything learned reported as signals.
+ * judged by RFC rules, with everything learned reported as signals. And
+ * who hosts it, by matching its MX against the classifier's provider
+ * registry.
  *
  * @packageDocumentation
  */
-import { check, type DnsSignals } from './check';
+import type { ProviderId } from '@email-utils/classifier/providers';
+import { check, detect, type DnsSignals } from './check';
 import { createLookups, type Lookups } from './lookups';
 import {
   type DnsCallOptions,
@@ -28,6 +31,14 @@ export type { ReasonCode, Result } from './result';
 
 let defaults: Rules | undefined;
 let shared: Lookups | undefined;
+
+function rulesFor(options: DnsOptions | undefined): Rules {
+  return options === undefined ? (defaults ??= resolve()) : resolve(options);
+}
+
+function sharedLookups(): Lookups {
+  return (shared ??= createLookups(resolveCache()));
+}
 
 /**
  * Looks up the domain of `emailOrDomain` and checks it can receive mail:
@@ -70,13 +81,7 @@ export async function checkDns(
   emailOrDomain: string,
   options?: DnsOptions,
 ): Promise<Result<DnsSignals>> {
-  const rules =
-    options === undefined ? (defaults ??= resolve()) : resolve(options);
-  return check(
-    emailOrDomain,
-    rules,
-    (shared ??= createLookups(resolveCache())),
-  );
+  return check(emailOrDomain, rulesFor(options), sharedLookups());
 }
 
 /**
@@ -94,7 +99,50 @@ export async function isValidDns(
   return (await checkDns(emailOrDomain, options)).ok;
 }
 
-/** {@link checkDns} and {@link isValidDns} with options, resolver, and cache bound. */
+/**
+ * Looks up the MX of `emailOrDomain`'s domain and names the provider that
+ * hosts it, from the MX patterns in `@email-utils/classifier/providers`:
+ * `'google-workspace'` for a domain whose MX is `smtp.google.com`, or
+ * `'namecheap'` for Namecheap's default forwarding MX.
+ *
+ * @remarks
+ * The MX hosts are tried in preference order, and the first one the
+ * registry knows names the provider, so a domain behind a filtering
+ * gateway is still found by its backup MX. The ID is the classifier's, so
+ * `getProvider` and the sanitizer's `provider` option take it.
+ *
+ * The value is `undefined` when the MX answer names no provider the
+ * registry knows, including a domain with no MX or a Null MX. When it
+ * can't tell, it fails as {@link checkDns} does: `dns.address.unparsable`
+ * for input that doesn't parse, and `dns.lookup.timeout` or
+ * `dns.lookup.failed` when the MX lookup does. Parsing, time budgets, and
+ * the shared cache are {@link checkDns}'s, and only MX is looked up.
+ *
+ * @example
+ * ```ts
+ * const result = await detectProviderByMx('ada@example.com');
+ * if (result.ok) {
+ *   result.value; // e.g. 'microsoft365', or undefined for no known provider
+ * } else {
+ *   result.reason; // e.g. 'dns.lookup.timeout'
+ * }
+ * ```
+ *
+ * @throws TypeError, as a rejection, when `emailOrDomain` isn't a string,
+ * or `options` are malformed. When `options.signal` aborts, it rejects
+ * with the signal's `reason`.
+ */
+export async function detectProviderByMx(
+  emailOrDomain: string,
+  options?: DnsOptions,
+): Promise<Result<ProviderId | undefined>> {
+  return detect(emailOrDomain, rulesFor(options), sharedLookups());
+}
+
+/**
+ * {@link checkDns}, {@link isValidDns}, and {@link detectProviderByMx}
+ * with options, resolver, and cache bound.
+ */
 export interface DnsValidator {
   /**
    * {@link checkDns} with the validator's options.
@@ -115,13 +163,26 @@ export interface DnsValidator {
    * `options.signal` aborts, it rejects with the signal's `reason`.
    */
   isValid(emailOrDomain: string, options?: DnsCallOptions): Promise<boolean>;
+  /**
+   * {@link detectProviderByMx} with the validator's options, sharing its
+   * MX answers with `check`.
+   *
+   * @throws TypeError, as a rejection, when `emailOrDomain` isn't a string,
+   * or `options` are malformed. When the validator's signal or
+   * `options.signal` aborts, it rejects with the signal's `reason`.
+   */
+  detectProviderByMx(
+    emailOrDomain: string,
+    options?: DnsCallOptions,
+  ): Promise<Result<ProviderId | undefined>>;
 }
 
 /**
- * Binds `options` once, and returns {@link checkDns} with them applied and
- * a cache of its own: answers are kept for `cacheTtl`, and checks of one
- * domain share a lookup in flight, so a thousand concurrent checks make one
- * lookup per record type.
+ * Binds `options` once, and returns {@link checkDns} and
+ * {@link detectProviderByMx} with them applied and a cache of its own:
+ * answers are kept for `cacheTtl`, and checks of one domain share a lookup
+ * in flight, so a thousand concurrent checks make one lookup per record
+ * type.
  *
  * @remarks
  * A check that joins a lookup another check started gets that lookup's
@@ -153,5 +214,7 @@ export function createDnsValidator(
       check(emailOrDomain, rules, lookups, call),
     isValid: async (emailOrDomain, call) =>
       (await check(emailOrDomain, rules, lookups, call)).ok,
+    detectProviderByMx: async (emailOrDomain, call) =>
+      detect(emailOrDomain, rules, lookups, call),
   };
 }

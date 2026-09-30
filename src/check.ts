@@ -1,6 +1,7 @@
 // Whether a domain can receive mail, by RFC rules: MX records, or A/AAAA as
 // the implicit MX (RFC 5321 §5.1), but never a Null MX (RFC 7505).
 import { domainToASCII } from 'node:url';
+import type { ProviderId } from '@email-utils/classifier/providers';
 import {
   type Lookup,
   type Lookups,
@@ -8,6 +9,7 @@ import {
   timedOut,
 } from './lookups';
 import { type DnsCallOptions, type Rules, signalsFor } from './options';
+import { matchProvider } from './providers';
 import type { ReasonCode, Result } from './result';
 
 /** Everything the lookups learned about the domain. */
@@ -145,6 +147,25 @@ function within<K extends RecordType>(
     : answer;
 }
 
+/**
+ * What `work` settles to, held to the check's budget and rejected when one
+ * of `signals` aborts.
+ */
+async function bounded<T>(
+  work: (expired: Promise<void>) => Promise<T>,
+  rules: Readonly<Rules>,
+  signals: readonly AbortSignal[],
+): Promise<T> {
+  // A lookup another check started keeps the budget it started with, so
+  // the check holds its lookups to its own as well.
+  const limit = deadline(Math.min(rules.query, rules.overall), signals);
+  try {
+    return await Promise.race([work(limit.expired), limit.aborted]);
+  } finally {
+    limit.clear();
+  }
+}
+
 type Answers = [Lookup<'MX'>, Lookup<'A'>, Lookup<'AAAA'>, Lookup<'TXT'>];
 
 /** MX, A, AAAA, and TXT for `domain`, all at once. */
@@ -167,22 +188,55 @@ async function gather(
   )) {
     return [mx, a, aaaa, txt];
   }
-  // A lookup another check started keeps the budget it started with, so
-  // the check holds its lookups to its own as well.
-  const limit = deadline(Math.min(rules.query, rules.overall), signals);
-  try {
-    return await Promise.race([
+  return bounded(
+    async (expired) =>
       Promise.all([
-        within(mx, 'MX', limit.expired),
-        within(a, 'A', limit.expired),
-        within(aaaa, 'AAAA', limit.expired),
-        within(txt, 'TXT', limit.expired),
+        within(mx, 'MX', expired),
+        within(a, 'A', expired),
+        within(aaaa, 'AAAA', expired),
+        within(txt, 'TXT', expired),
       ]),
-      limit.aborted,
-    ]);
-  } finally {
-    limit.clear();
+    rules,
+    signals,
+  );
+}
+
+/**
+ * The signals that abort a call, once `input` is known to be a string and
+ * none has aborted yet.
+ */
+function begin(
+  input: unknown,
+  rules: Readonly<Rules>,
+  call: DnsCallOptions | undefined,
+): AbortSignal[] {
+  if (typeof input !== 'string') {
+    throw new TypeError('Expected the address or domain to be a string');
   }
+  const signals = signalsFor(rules, call);
+  for (const signal of signals) {
+    signal.throwIfAborted();
+  }
+  return signals;
+}
+
+/**
+ * The MX hosts, lowercased and without the trailing dot, in preference
+ * order, and whether a Null MX was among them.
+ */
+function hostsOf(records: readonly { exchange: string; priority: number }[]): {
+  mxHosts: string[];
+  nullMx: boolean;
+} {
+  const sorted = [...records];
+  // A copy, so sort is safe; toSorted is ES2023, past the ES2022 target.
+  // oxlint-disable-next-line unicorn/no-array-sort
+  sorted.sort((x, y) => x.priority - y.priority);
+  const hosts = sorted.map(({ exchange }) =>
+    exchange.toLowerCase().replace(/\.$/, ''),
+  );
+  const mxHosts = [...new Set(hosts.filter((host) => host !== ''))];
+  return { mxHosts, nullMx: mxHosts.length < hosts.length };
 }
 
 /**
@@ -195,13 +249,7 @@ export async function check(
   lookups: Lookups,
   call?: DnsCallOptions,
 ): Promise<Result<DnsSignals>> {
-  if (typeof input !== 'string') {
-    throw new TypeError('Expected the address or domain to be a string');
-  }
-  const signals = signalsFor(rules, call);
-  for (const signal of signals) {
-    signal.throwIfAborted();
-  }
+  const signals = begin(input, rules, call);
   const domain = target(input, rules);
   if (typeof domain !== 'string') {
     return domain;
@@ -213,15 +261,7 @@ export async function check(
   if (!mx.ok) {
     return failed(mx);
   }
-  const records = [...mx.records];
-  // A copy, so sort is safe; toSorted is ES2023, past the ES2022 target.
-  // oxlint-disable-next-line unicorn/no-array-sort
-  records.sort((x, y) => x.priority - y.priority);
-  const hosts = records.map(({ exchange }) =>
-    exchange.toLowerCase().replace(/\.$/, ''),
-  );
-  const mxHosts = [...new Set(hosts.filter((host) => host !== ''))];
-  const nullMx = mxHosts.length < hosts.length;
+  const { mxHosts, nullMx } = hostsOf(mx.records);
   if (nullMx && mxHosts.length === 0) {
     return fail(
       'dns.mx.null',
@@ -259,4 +299,35 @@ export async function check(
       mxHosts,
     },
   };
+}
+
+/**
+ * Looks up MX for the domain in `input`, and names the provider whose MX
+ * patterns the first known host matches, in preference order: `undefined`
+ * when none does. Input that doesn't parse, and an MX lookup that fails,
+ * are failures, as in {@link check}.
+ */
+export async function detect(
+  input: string,
+  rules: Readonly<Rules>,
+  lookups: Lookups,
+  call?: DnsCallOptions,
+): Promise<Result<ProviderId | undefined>> {
+  const signals = begin(input, rules, call);
+  const domain = target(input, rules);
+  if (typeof domain !== 'string') {
+    return domain;
+  }
+  const pending = lookups.get('MX', domain, rules.query);
+  const mx =
+    pending instanceof Promise
+      ? await bounded(
+          async (expired) => within(pending, 'MX', expired),
+          rules,
+          signals,
+        )
+      : pending;
+  return mx.ok
+    ? { ok: true, value: matchProvider(hostsOf(mx.records).mxHosts) }
+    : failed(mx);
 }

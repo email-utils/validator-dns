@@ -68,6 +68,7 @@
     "lefthook": true
   },
   "dependencies": {
+    "@email-utils/classifier": "^1.0.0-rc.3",
     "@email-utils/validator-syntax": "^1.0.0-rc.1"
   }
 }

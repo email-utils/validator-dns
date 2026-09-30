@@ -1,8 +1,13 @@
-// checkDns and isValidDns: the factory's check over node:dns/promises and a
-// cache every call shares. The cache lives as long as the module, so each
-// case uses a domain of its own.
+// checkDns, isValidDns, and detectProviderByMx: the factory's code over
+// node:dns/promises and a cache every call shares. The cache lives as long
+// as the module, so each case uses a domain of its own.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { checkDns, createDnsValidator, isValidDns } from '../src';
+import {
+  checkDns,
+  createDnsValidator,
+  detectProviderByMx,
+  isValidDns,
+} from '../src';
 import { mx, queries, reset, zone } from './fake-dns';
 
 vi.mock('node:dns/promises', async () => (await import('./fake-dns')).promises);
@@ -62,6 +67,30 @@ describe('isValidDns', () => {
     expect(await isValidDns('ada@valid.example.com')).toBe(true);
     expect(await isValidDns('ada@null.example.com')).toBe(false);
     expect(await isValidDns('not an address')).toBe(false);
+  });
+});
+
+describe('detectProviderByMx', () => {
+  it('shares checkDns’s cache', async () => {
+    zone.set('hosted.example.com', { MX: mx('smtp.google.com') });
+    await checkDns('ada@hosted.example.com');
+    expect(await detectProviderByMx('ada@hosted.example.com')).toEqual({
+      ok: true,
+      value: 'google-workspace',
+    });
+    expect(await detectProviderByMx('hosted.example.com', {})).toEqual({
+      ok: true,
+      value: 'google-workspace',
+    });
+    expect(queries).toHaveLength(4);
+  });
+
+  it('rejects with the reason when its signal aborts', async () => {
+    await expect(
+      detectProviderByMx('abort.example.com', {
+        signal: AbortSignal.abort('stop'),
+      }),
+    ).rejects.toBe('stop');
   });
 });
 
