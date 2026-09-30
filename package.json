@@ -54,6 +54,7 @@
     "@arethetypeswrong/cli": "^0.18.5",
     "@types/node": "^24.0.0",
     "@vitest/coverage-v8": "^5.0.2",
+    "fast-check": "^4.10.2",
     "lefthook": "^2.1.14",
     "oxlint": "^1.85.0",
     "oxlint-tsgolint": "^7.0.2003",
