@@ -7,18 +7,23 @@ interface Index {
   exact: Map<string, ProviderId>;
   /** The base of each `*.` pattern, which matches one or more labels. */
   under: Map<string, ProviderId>;
+  /** The longest base in `under`: no longer parent can match. */
+  longest: number;
 }
 
 let index: Index | undefined;
 
 function build(): Index {
-  const built: Index = { exact: new Map(), under: new Map() };
+  const built: Index = { exact: new Map(), under: new Map(), longest: 0 };
   for (const { id, mxPatterns } of providers) {
     for (const pattern of mxPatterns) {
-      const [map, key] = pattern.startsWith('*.')
-        ? [built.under, pattern.slice(2)]
-        : [built.exact, pattern];
-      map.set(key, id);
+      if (pattern.startsWith('*.')) {
+        const base = pattern.slice(2);
+        built.under.set(base, id);
+        built.longest = Math.max(built.longest, base.length);
+      } else {
+        built.exact.set(pattern, id);
+      }
     }
   }
   return built;
@@ -27,16 +32,18 @@ function build(): Index {
 /** The provider whose MX patterns `host` matches, if any. */
 function providerOf(
   host: string,
-  { exact, under }: Index,
+  { exact, under, longest }: Index,
 ): ProviderId | undefined {
   const id = exact.get(host);
   if (id !== undefined) {
     return id;
   }
   // Each parent of the host, nearest first: a.b.example.com tries
-  // b.example.com, example.com, then com.
+  // b.example.com, example.com, then com. Parents longer than every base
+  // are skipped, since looking each up would hash it: with them, a host of
+  // many labels took time quadratic in its length (validator-dns#11).
   for (
-    let dot = host.indexOf('.');
+    let dot = host.indexOf('.', host.length - longest - 1);
     dot !== -1;
     dot = host.indexOf('.', dot + 1)
   ) {

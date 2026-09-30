@@ -55,6 +55,18 @@ describe('matching', () => {
     expect(await detect(host)).toEqual(found(id));
   });
 
+  // And with as many as a 253-character host holds.
+  it.each(
+    providers.flatMap(({ id, mxPatterns }) =>
+      mxPatterns
+        .filter((pattern) => pattern.startsWith('*.'))
+        .map((pattern) => [pattern.slice(2), id]),
+    ),
+  )('finds a host many labels below *.%s as %s', async (base, id) => {
+    const labels = Math.floor((253 - base.length) / 2);
+    expect(await detect(`${'a.'.repeat(labels)}${base}`)).toEqual(found(id));
+  });
+
   it('ignores case and the trailing dot', async () => {
     expect(await detect('SMTP.Google.COM.')).toEqual(found('google-workspace'));
   });
@@ -79,6 +91,27 @@ describe('matching', () => {
     expect(await validator().detectProviderByMx('example.com')).toEqual(
       found('google-workspace'),
     );
+  });
+
+  it('takes the first of known hosts of equal preference, looked up or cached', async () => {
+    zone.set('example.com', {
+      MX: [
+        { exchange: 'mx.gateway.example.com', priority: 5 },
+        { exchange: 'eforward1.registrar-servers.com', priority: 10 },
+        { exchange: 'smtp.google.com', priority: 10 },
+      ],
+    });
+    const dns = validator();
+    expect(await dns.detectProviderByMx('example.com')).toEqual(
+      found('namecheap'),
+    );
+    await dns.check('example.com');
+    expect(await dns.detectProviderByMx('example.com')).toEqual(
+      found('namecheap'),
+    );
+    expect(queries.filter((query) => query.startsWith('MX'))).toEqual([
+      'MX example.com',
+    ]);
   });
 });
 

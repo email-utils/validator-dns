@@ -1,0 +1,8 @@
+[
+  {
+    "name": "@email-utils/validator-dns",
+    "path": "dist/index.mjs",
+    "ignore": ["node:dns", "node:net", "node:tls", "node:url"],
+    "limit": "14.5 kB"
+  }
+]
