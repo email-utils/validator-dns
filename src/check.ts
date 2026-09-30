@@ -1,8 +1,13 @@
 // Whether a domain can receive mail, by RFC rules: MX records, or A/AAAA as
 // the implicit MX (RFC 5321 §5.1), but never a Null MX (RFC 7505).
-import { resolve4, resolve6, resolveMx, resolveTxt } from 'node:dns/promises';
 import { domainToASCII } from 'node:url';
-import type { Rules } from './options';
+import {
+  type Lookup,
+  type Lookups,
+  type RecordType,
+  timedOut,
+} from './lookups';
+import { type DnsCallOptions, type Rules, signalsFor } from './options';
 import type { ReasonCode, Result } from './result';
 
 /** Everything the lookups learned about the domain. */
@@ -35,35 +40,8 @@ export interface DnsSignals {
 
 type Failure = Extract<Result<never>, { ok: false }>;
 
-/** A lookup's records, with "no such domain" and "no records" both empty. */
-type Lookup<T> =
-  | { ok: true; records: T[] }
-  | { ok: false; type: string; code: string | undefined };
-
 function fail(reason: ReasonCode, message: string): Failure {
   return { ok: false, reason, message };
-}
-
-async function lookup<T>(
-  type: string,
-  query: () => Promise<T[]>,
-): Promise<Lookup<T>> {
-  try {
-    return { ok: true, records: await query() };
-  } catch (error) {
-    const code: unknown =
-      typeof error === 'object' && error !== null && 'code' in error
-        ? error.code
-        : undefined;
-    if (code === 'ENODATA' || code === 'ENOTFOUND') {
-      return { ok: true, records: [] };
-    }
-    return {
-      ok: false,
-      type,
-      code: typeof code === 'string' ? code : undefined,
-    };
-  }
 }
 
 function failed({ type, code }: { type: string; code: string | undefined }) {
@@ -118,6 +96,95 @@ function target(input: string, rules: Readonly<Rules>): string | Failure {
     : ascii;
 }
 
+/** A check's time budget and abort signals, while its lookups are out. */
+interface Deadline {
+  /** Resolves when the budget runs out. */
+  expired: Promise<void>;
+  /** Rejects with the reason when a signal aborts. */
+  aborted: Promise<never>;
+  clear(): void;
+}
+
+function deadline(ms: number, signals: readonly AbortSignal[]): Deadline {
+  let timer: NodeJS.Timeout | undefined;
+  const cleanups: (() => void)[] = [];
+  const expired = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, ms);
+  });
+  const aborted = new Promise<never>((_, reject) => {
+    for (const signal of signals) {
+      const onAbort = (): void => {
+        // The caller's own reason, an AbortError unless they gave one.
+        // oxlint-disable-next-line prefer-promise-reject-errors
+        reject(signal.reason);
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+      cleanups.push(() => signal.removeEventListener('abort', onAbort));
+    }
+  });
+  return {
+    expired,
+    aborted,
+    clear() {
+      clearTimeout(timer);
+      for (const cleanup of cleanups) {
+        cleanup();
+      }
+    },
+  };
+}
+
+/** The answer, or a timeout if the check's budget runs out first. */
+function within<K extends RecordType>(
+  answer: Lookup<K> | Promise<Lookup<K>>,
+  type: K,
+  expired: Promise<void>,
+): Lookup<K> | Promise<Lookup<K>> {
+  return answer instanceof Promise
+    ? Promise.race([answer, expired.then(() => timedOut(type))])
+    : answer;
+}
+
+type Answers = [Lookup<'MX'>, Lookup<'A'>, Lookup<'AAAA'>, Lookup<'TXT'>];
+
+/** MX, A, AAAA, and TXT for `domain`, all at once. */
+async function gather(
+  domain: string,
+  rules: Readonly<Rules>,
+  lookups: Lookups,
+  signals: readonly AbortSignal[],
+): Promise<Answers> {
+  const mx = lookups.get('MX', domain, rules.query);
+  const a = lookups.get('A', domain, rules.query);
+  const aaaa = lookups.get('AAAA', domain, rules.query);
+  const txt = lookups.get('TXT', domain, rules.query);
+  // Every answer cached: no timer, no listeners.
+  if (!(
+    mx instanceof Promise ||
+    a instanceof Promise ||
+    aaaa instanceof Promise ||
+    txt instanceof Promise
+  )) {
+    return [mx, a, aaaa, txt];
+  }
+  // A lookup another check started keeps the budget it started with, so
+  // the check holds its lookups to its own as well.
+  const limit = deadline(Math.min(rules.query, rules.overall), signals);
+  try {
+    return await Promise.race([
+      Promise.all([
+        within(mx, 'MX', limit.expired),
+        within(a, 'A', limit.expired),
+        within(aaaa, 'AAAA', limit.expired),
+        within(txt, 'TXT', limit.expired),
+      ]),
+      limit.aborted,
+    ]);
+  } finally {
+    limit.clear();
+  }
+}
+
 /**
  * Looks up MX, A, AAAA, and TXT for the domain in `input` at once, and
  * decides from them whether it can receive mail.
@@ -125,20 +192,21 @@ function target(input: string, rules: Readonly<Rules>): string | Failure {
 export async function check(
   input: string,
   rules: Readonly<Rules>,
+  lookups: Lookups,
+  call?: DnsCallOptions,
 ): Promise<Result<DnsSignals>> {
   if (typeof input !== 'string') {
     throw new TypeError('Expected the address or domain to be a string');
+  }
+  const signals = signalsFor(rules, call);
+  for (const signal of signals) {
+    signal.throwIfAborted();
   }
   const domain = target(input, rules);
   if (typeof domain !== 'string') {
     return domain;
   }
-  const [mx, a, aaaa, txt] = await Promise.all([
-    lookup('MX', () => resolveMx(domain)),
-    lookup('A', () => resolve4(domain)),
-    lookup('AAAA', () => resolve6(domain)),
-    lookup('TXT', () => resolveTxt(domain)),
-  ]);
+  const [mx, a, aaaa, txt] = await gather(domain, rules, lookups, signals);
   // Whether the domain can receive mail rests on MX, and on A/AAAA when
   // there's no MX, so only those lookups' failures fail the check. The rest
   // leave their signal `undefined`.
