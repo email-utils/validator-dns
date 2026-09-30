@@ -55,8 +55,10 @@ function sharedLookups(): Lookups {
  * The input is trimmed and parsed with the `syntax` options first, and
  * input that doesn't parse, or has a domain literal, fails with
  * `dns.address.unparsable` before any lookup, as does input longer than
- * 512 characters, which isn't read at all. A string without an `@` is taken
- * as a bare domain. IDN domains are looked up by their A-labels.
+ * `syntax.maxLength`, 512 characters by default, which isn't read at all:
+ * it's checked before trimming, so surrounding whitespace counts toward it.
+ * A string without an `@` is taken as a bare domain. IDN domains are looked
+ * up by their A-labels.
  *
  * MX, A, AAAA, and TXT are looked up at once, through `node:dns/promises`,
  * each within `timeout.query` and all within `timeout.overall`. Only a

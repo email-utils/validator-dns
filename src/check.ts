@@ -63,24 +63,18 @@ const spf = /^v=spf1(?: |$)/i;
 const notHostname = /[^\da-z.\-\u0080-\u{10ffff}]/iu;
 
 /**
- * The longest input read: validator-syntax's default `maxLength` from its
- * next release, and twice the 254-character address cap, which leaves room
- * for comments and folding whitespace that don't count toward it. Longer
- * input is rejected unread, so its size costs nothing (validator-dns#11).
- * The `syntax` options reach validator-syntax as given, so once its
- * `maxLength` ships this can follow that option instead.
- */
-const maxInput = 512;
-
-/**
  * The domain to look up for `input`, as A-labels, or why there's none.
  * A string without an `@` is taken as a bare domain.
  */
 function target(input: string, rules: Readonly<Rules>): string | Failure {
-  if (input.length > maxInput) {
+  // The syntax rules' `maxLength`, 512 by default, caps the input before
+  // it's trimmed: longer input, padding and all, is rejected unread, so its
+  // size costs nothing (validator-dns#11).
+  const max = rules.syntax.maxLength;
+  if (input.length > max) {
     return fail(
       'dns.address.unparsable',
-      `The input is longer than ${maxInput} characters`,
+      `The input is longer than ${max} characters`,
     );
   }
   const text = input.trim();

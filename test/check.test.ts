@@ -293,6 +293,36 @@ describe('the input', () => {
     expect(queries).toEqual([]);
   });
 
+  it.each([
+    ['a lower', 100],
+    ['a higher', 1024],
+  ])('follows %s `syntax.maxLength` in place of 512', async (_, maxLength) => {
+    const options = { syntax: { maxLength } };
+    zone.set('example.com', { MX: mx('mx.example.com') });
+    expect(await isValidDns(padded(maxLength), options)).toBe(true);
+    expect(queries).toContain('MX example.com');
+    reset();
+    expect(await checkDns(padded(maxLength + 1), options)).toEqual({
+      ...unparsable,
+      message: `The input is longer than ${maxLength} characters`,
+    });
+    expect(queries).toEqual([]);
+  });
+
+  it('reads input of any length with a `syntax.maxLength` of Infinity', async () => {
+    const options = { syntax: { maxLength: Infinity } };
+    zone.set('example.com', { MX: mx('mx.example.com') });
+    expect(await isValidDns(padded(100_000), options)).toBe(true);
+    reset();
+    expect(
+      await checkDns(`${'a'.repeat(100_000)}@example.com`, options),
+    ).toEqual({
+      ...unparsable,
+      message: 'The local part is longer than 64 characters',
+    });
+    expect(queries).toEqual([]);
+  });
+
   it('fails a domain literal without a lookup', async () => {
     expect(
       await checkDns('ada@[192.0.2.1]', { syntax: { preset: 'rfc5321' } }),

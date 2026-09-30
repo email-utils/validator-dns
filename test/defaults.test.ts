@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   checkDns,
   createDnsValidator,
+  type DnsOptions,
   detectProviderByMx,
   isValidDns,
   probeSmtp,
@@ -133,6 +134,75 @@ describe('scoreDns', () => {
     ).toMatchObject({ ok: true, value: { probability: 0.5 } });
     expect(await scoreDns('scored.example.com')).toMatchObject({ ok: true });
     expect(queries).toHaveLength(4);
+  });
+});
+
+describe('the input cap', () => {
+  const functions: readonly [
+    string,
+    (input: string, options?: DnsOptions) => Promise<unknown>,
+  ][] = [
+    ['checkDns', checkDns],
+    ['isValidDns', isValidDns],
+    ['detectProviderByMx', detectProviderByMx],
+    ['probeSmtp', probeSmtp],
+    ['scoreDns', scoreDns],
+  ];
+  // The default, from the rules every call without options shares, and a
+  // lower and a higher `syntax.maxLength`, resolved with the call's options.
+  const cases = functions.flatMap(([name, fn]) =>
+    [undefined, 100, 1024].map((maxLength) => ({
+      name,
+      fn,
+      maxLength,
+      label:
+        maxLength === undefined
+          ? 'the default 512'
+          : `a maxLength of ${maxLength}`,
+    })),
+  );
+
+  it.each(cases)(
+    '$name fails input past $label unread, and reads it up to there',
+    async ({ name, fn, maxLength }) => {
+      const limit = maxLength ?? 512;
+      const options =
+        maxLength === undefined ? undefined : { syntax: { maxLength } };
+      // A Null MX, so the check fails before probeSmtp would probe.
+      const read = `read.${limit}.${name.toLowerCase()}.example.com`;
+      zone.set(read, { MX: [{ exchange: '', priority: 0 }] });
+      await fn(read.padStart(limit), options);
+      expect(queries).toContain(`MX ${read}`);
+      reset();
+      const unread = `unread.${limit}.${name.toLowerCase()}.example.com`;
+      expect(await fn(unread.padStart(limit + 1), options)).toEqual(
+        fn === isValidDns
+          ? false
+          : {
+              ok: false,
+              reason: 'dns.address.unparsable',
+              message: `The input is longer than ${limit} characters`,
+            },
+      );
+      expect(queries).toEqual([]);
+    },
+  );
+
+  it('reads input of any length with a maxLength of Infinity', async () => {
+    const options = { syntax: { maxLength: Infinity } };
+    zone.set('infinity.example.com', { MX: mx('mx.example.com') });
+    expect(
+      await isValidDns('ada@infinity.example.com'.padStart(100_000), options),
+    ).toBe(true);
+    reset();
+    expect(
+      await checkDns(`${'a'.repeat(100_000)}@long.example.com`, options),
+    ).toEqual({
+      ok: false,
+      reason: 'dns.address.unparsable',
+      message: 'The local part is longer than 64 characters',
+    });
+    expect(queries).toEqual([]);
   });
 });
 
