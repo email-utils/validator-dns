@@ -45,6 +45,8 @@
     "test:coverage": "vitest run --coverage",
     "bench": "vitest bench --run",
     "check:package": "publint && attw --pack .",
+    "corpus": "npm run build && node scripts/corpus.ts",
+    "fit": "node scripts/fit.ts",
     "pre-commit": "npm run lint && npm run format:check && npm run typecheck",
     "prepack": "npm run build"
   },

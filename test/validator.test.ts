@@ -234,6 +234,19 @@ describe('the options', () => {
     ['a resolver that isn’t an object', { resolver: 'dns' }],
     ['a negative cacheTtl', { cacheTtl: -1 }],
     ['a cacheTtl that isn’t a number', { cacheTtl: '30s' }],
+    ['smtp that isn’t an object', { smtp: 25 }],
+    ['no ports', { smtp: { ports: [] } }],
+    ['ports that aren’t an array', { smtp: { ports: 25 } }],
+    ['port 0', { smtp: { ports: [0] } }],
+    ['a port past 65535', { smtp: { ports: [65_536] } }],
+    ['a fractional port', { smtp: { ports: [25.5] } }],
+    ['an empty ehloName', { smtp: { ehloName: '' } }],
+    ['an ehloName with a space', { smtp: { ehloName: 'mx example.com' } }],
+    // It goes on the wire, so a line break would inject a command.
+    ['an ehloName with CRLF', { smtp: { ehloName: 'a\r\nRCPT TO:<x@y>' } }],
+    ['an ehloName that isn’t a string', { smtp: { ehloName: 1 } }],
+    ['a probe budget of 0', { smtp: { timeout: 0 } }],
+    ['an untilAccepted that isn’t a boolean', { smtp: { untilAccepted: 1 } }],
   ])('throw a TypeError for %s', (_, options) => {
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion
     expect(() => createDnsValidator(options as never)).toThrow(TypeError);
@@ -255,6 +268,7 @@ describe('the options', () => {
       createDnsValidator({
         timeout: { query: 2 ** 31 - 1, overall: 2 ** 31 - 1 },
         cacheTtl: Infinity,
+        smtp: { ports: [1, 65_535], ehloName: '[IPv6:::1]' },
       }),
     ).not.toThrow();
   });
