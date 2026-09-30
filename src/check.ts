@@ -11,6 +11,8 @@ import {
 import { type DnsCallOptions, type Rules, signalsFor } from './options';
 import { matchProvider } from './providers';
 import type { ReasonCode, Result } from './result';
+import { type DnsScore, estimate } from './score';
+import { probeHosts, type SmtpProbe } from './smtp';
 
 /** Everything the lookups learned about the domain. */
 export interface DnsSignals {
@@ -239,22 +241,8 @@ function hostsOf(records: readonly { exchange: string; priority: number }[]): {
   return { mxHosts, nullMx: mxHosts.length < hosts.length };
 }
 
-/**
- * Looks up MX, A, AAAA, and TXT for the domain in `input` at once, and
- * decides from them whether it can receive mail.
- */
-export async function check(
-  input: string,
-  rules: Readonly<Rules>,
-  lookups: Lookups,
-  call?: DnsCallOptions,
-): Promise<Result<DnsSignals>> {
-  const signals = begin(input, rules, call);
-  const domain = target(input, rules);
-  if (typeof domain !== 'string') {
-    return domain;
-  }
-  const [mx, a, aaaa, txt] = await gather(domain, rules, lookups, signals);
+/** Whether the domain can receive mail, from its answers. */
+function judge([mx, a, aaaa, txt]: Answers): Result<DnsSignals> {
   // Whether the domain can receive mail rests on MX, and on A/AAAA when
   // there's no MX, so only those lookups' failures fail the check. The rest
   // leave their signal `undefined`.
@@ -299,6 +287,81 @@ export async function check(
       mxHosts,
     },
   };
+}
+
+/** The domain in `input` and its verdict, with the call's abort signals. */
+async function examine(
+  input: string,
+  rules: Readonly<Rules>,
+  lookups: Lookups,
+  call: DnsCallOptions | undefined,
+): Promise<
+  | { domain: string; signals: AbortSignal[]; result: Result<DnsSignals> }
+  | Failure
+> {
+  const signals = begin(input, rules, call);
+  const domain = target(input, rules);
+  if (typeof domain !== 'string') {
+    return domain;
+  }
+  const answers = await gather(domain, rules, lookups, signals);
+  return { domain, signals, result: judge(answers) };
+}
+
+/**
+ * Looks up MX, A, AAAA, and TXT for the domain in `input` at once, and
+ * decides from them whether it can receive mail.
+ */
+export async function check(
+  input: string,
+  rules: Readonly<Rules>,
+  lookups: Lookups,
+  call?: DnsCallOptions,
+): Promise<Result<DnsSignals>> {
+  const examined = await examine(input, rules, lookups, call);
+  return 'result' in examined ? examined.result : examined;
+}
+
+/**
+ * {@link check}, then probes each MX host, or the domain itself for an
+ * implicit MX, on every port at once.
+ */
+export async function probe(
+  input: string,
+  rules: Readonly<Rules>,
+  lookups: Lookups,
+  call?: DnsCallOptions,
+): Promise<Result<SmtpProbe>> {
+  const examined = await examine(input, rules, lookups, call);
+  if (!('result' in examined)) {
+    return examined;
+  }
+  const { domain, signals, result } = examined;
+  if (!result.ok) {
+    return result;
+  }
+  const stop = AbortSignal.any(signals);
+  const probed = await probeHosts(
+    result.value.implicitMx ? [domain] : result.value.mxHosts,
+    rules.probe,
+    stop,
+  );
+  // An abort settles the probes early; the call rejects with its reason.
+  stop.throwIfAborted();
+  return { ok: true, value: probed };
+}
+
+/** {@link check}, then the score model's estimate from the signals. */
+export async function score(
+  input: string,
+  rules: Readonly<Rules>,
+  lookups: Lookups,
+  call?: DnsCallOptions,
+): Promise<Result<DnsScore>> {
+  const checked = await check(input, rules, lookups, call);
+  return checked.ok
+    ? { ok: true, value: estimate(checked.value, rules.model) }
+    : checked;
 }
 
 /**

@@ -1,5 +1,5 @@
-// checkDns, isValidDns, and detectProviderByMx: the factory's code over
-// node:dns/promises and a cache every call shares. The cache lives as long
+// checkDns, isValidDns, detectProviderByMx, probeSmtp, and scoreDns: the
+// factory's code over node:dns/promises and a cache every call shares. The cache lives as long
 // as the module, so each case uses a domain of its own.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -7,8 +7,11 @@ import {
   createDnsValidator,
   detectProviderByMx,
   isValidDns,
+  probeSmtp,
+  scoreDns,
 } from '../src';
 import { mx, queries, reset, zone } from './fake-dns';
+import { smtp } from './fake-smtp';
 
 vi.mock('node:dns/promises', async () => (await import('./fake-dns')).promises);
 
@@ -91,6 +94,45 @@ describe('detectProviderByMx', () => {
         signal: AbortSignal.abort('stop'),
       }),
     ).rejects.toBe('stop');
+  });
+});
+
+describe('probeSmtp', () => {
+  it('shares checkDns’s cache, and takes smtp options', async () => {
+    const server = await smtp();
+    zone.set('probed.example.com', { MX: mx('127.0.0.1') });
+    await checkDns('probed.example.com');
+    expect(
+      await probeSmtp('ada@probed.example.com', {
+        smtp: { ports: [server.port] },
+      }),
+    ).toMatchObject({ ok: true, value: { accepted: true } });
+    expect(queries).toHaveLength(4);
+  });
+
+  it('rejects with the reason when its signal aborts', async () => {
+    await expect(
+      probeSmtp('abort.example.com', { signal: AbortSignal.abort('stop') }),
+    ).rejects.toBe('stop');
+  });
+});
+
+describe('scoreDns', () => {
+  it('shares checkDns’s cache, and takes a scoreModel', async () => {
+    zone.set('scored.example.com', { MX: mx('mx.example.com') });
+    await checkDns('scored.example.com');
+    expect(
+      await scoreDns('scored.example.com', {
+        scoreModel: {
+          id: 'flat',
+          version: '1.0.0',
+          intercept: 0,
+          coefficients: {},
+        },
+      }),
+    ).toMatchObject({ ok: true, value: { probability: 0.5 } });
+    expect(await scoreDns('scored.example.com')).toMatchObject({ ok: true });
+    expect(queries).toHaveLength(4);
   });
 });
 
