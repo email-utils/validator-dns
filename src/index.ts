@@ -68,7 +68,9 @@ function sharedLookups(): Lookups {
  * with its own resolver and TTL.
  *
  * @example
- * ```ts
+ * ```ts no-run
+ * import { checkDns } from '@email-utils/validator-dns';
+ *
  * const result = await checkDns('ada@example.com');
  * if (result.ok) {
  *   result.value; // { hasMx: true, nullMx: false, implicitMx: false, hasSpf: true, … }
@@ -77,6 +79,15 @@ function sharedLookups(): Lookups {
  * }
  *
  * await checkDns('bücher.de'); // looks up xn--bcher-kva.de
+ * ```
+ *
+ * @example
+ * ```ts
+ * import { checkDns } from '@email-utils/validator-dns';
+ *
+ * // A domain literal has no records to look up, so none is made.
+ * await checkDns('ada@[192.0.2.1]');
+ * // => { ok: false, reason: 'dns.address.unparsable' }
  * ```
  *
  * @throws TypeError, as a rejection, when `emailOrDomain` isn't a string,
@@ -93,6 +104,15 @@ export async function checkDns(
 /**
  * Whether the domain of `emailOrDomain` can receive mail: exactly
  * `(await checkDns(emailOrDomain, options)).ok`.
+ *
+ * @example
+ * ```ts no-run
+ * import { isValidDns } from '@email-utils/validator-dns';
+ *
+ * if (!(await isValidDns('ada@example.com'))) {
+ *   // No mail there, or a lookup failed; checkDns's `reason` tells which.
+ * }
+ * ```
  *
  * @throws TypeError, as a rejection, when `emailOrDomain` isn't a string,
  * or `options` are malformed. When `options.signal` aborts, it rejects
@@ -125,7 +145,9 @@ export async function isValidDns(
  * the shared cache are {@link checkDns}'s, and only MX is looked up.
  *
  * @example
- * ```ts
+ * ```ts no-run
+ * import { detectProviderByMx } from '@email-utils/validator-dns';
+ *
  * const result = await detectProviderByMx('ada@example.com');
  * if (result.ok) {
  *   result.value; // e.g. 'microsoft365', or undefined for no known provider
@@ -164,8 +186,12 @@ export async function detectProviderByMx(
  * not "the domain is dead".
  *
  * @example
- * ```ts
- * const result = await probeSmtp('ada@example.com');
+ * ```ts no-run
+ * import { probeSmtp } from '@email-utils/validator-dns';
+ *
+ * const result = await probeSmtp('ada@example.com', {
+ *   smtp: { ports: [25, 587], untilAccepted: true },
+ * });
  * if (result.ok) {
  *   result.value.accepted; // true when some MX host answered EHLO with 250
  *   result.value.probes; // [{ host: 'mx.example.com', port: 25, outcome: 'accepted', code: 250, … }]
@@ -206,9 +232,11 @@ export async function probeSmtp(
  * calibration with it.
  *
  * @example
- * What the default model gives typical domains, measured on its held-out
- * corpus (the repo's model/ directory has the full tables):
- * ```ts
+ * ```ts no-run
+ * import { scoreDns } from '@email-utils/validator-dns';
+ *
+ * // What the default model gives typical domains, measured on its held-out
+ * // corpus (the repo's model/ directory has the full tables):
  * // MX on Google Workspace or Microsoft 365, SPF → ≈ 0.99
  * // Self-hosted MX, SPF                          → ≈ 0.75
  * // Self-hosted MX, no SPF                       → ≈ 0.62
@@ -224,6 +252,22 @@ export async function probeSmtp(
  *
  * // The same signals, without the registry: self-hosted ≈ 0.81, hosted ≈ 0.9
  * await scoreDns('ada@example.com', { scoreModel: 'dns-only' });
+ * ```
+ *
+ * @example
+ * ```ts
+ * import { scoreDns } from '@email-utils/validator-dns';
+ *
+ * // A model of your own is checked before any lookup: its intercept and
+ * // coefficients must be within ±1e6.
+ * await scoreDns('ada@example.com', {
+ *   scoreModel: {
+ *     id: 'mine',
+ *     version: '1.0.0',
+ *     intercept: -3,
+ *     coefficients: { hasMx: 1e7 },
+ *   },
+ * }); // => throws TypeError
  * ```
  *
  * @throws TypeError, as a rejection, when `emailOrDomain` isn't a string,
@@ -313,15 +357,30 @@ export interface DnsValidator {
  *
  * @example
  * ```ts
+ * import {
+ *   createDnsValidator,
+ *   type DnsResolver,
+ * } from '@email-utils/validator-dns';
+ *
+ * // A stub, as in tests; by default the lookups go to node:dns.
+ * const resolver: DnsResolver = {
+ *   resolveMx: async () => [{ exchange: 'smtp.google.com.', priority: 1 }],
+ *   resolve4: async () => ['192.0.2.1'],
+ *   resolve6: async () => [],
+ *   resolveTxt: async () => [['v=spf1 include:_spf.google.com ~all']],
+ * };
  * const validator = createDnsValidator({
+ *   resolver,
  *   timeout: { query: 1000, overall: 3000 },
  *   cacheTtl: 60_000,
  * });
  *
- * // In a request handler, so a closed connection stops the wait:
- * const result = await validator.check('ada@example.com', {
- *   signal: request.signal,
- * });
+ * await validator.check('ada@example.com');
+ * // => { ok: true, value: { hasMx: true, hasSpf: true, mxHosts: ['smtp.google.com'] } }
+ *
+ * // From the cached MX answer:
+ * await validator.detectProviderByMx('ada@example.com');
+ * // => { ok: true, value: 'google-workspace' }
  * ```
  *
  * @throws TypeError when `options` are malformed.

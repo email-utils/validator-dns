@@ -92,7 +92,7 @@ const trancoLine = /^\d+,[a-z\d._-]+$/i;
 
 /** The Tranco list, downloaded once and kept by its ID. */
 async function tranco(id: string): Promise<string> {
-  const path = `.corpus/tranco-${id}.csv`;
+  const path = `.cache/corpus/tranco-${id}.csv`;
   const kept = readIfPresent(path);
   if (kept !== undefined) {
     return kept;
@@ -112,7 +112,7 @@ async function tranco(id: string): Promise<string> {
   ) {
     throw new Error(`The download for list ${id} isn't a Tranco list`);
   }
-  mkdirSync('.corpus', { recursive: true });
+  mkdirSync('.cache/corpus', { recursive: true });
   // Written whole, then renamed, so a half-downloaded list never stays.
   writeFileSync(`${path}.part`, text);
   renameSync(`${path}.part`, path);
