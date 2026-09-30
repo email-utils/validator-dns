@@ -341,18 +341,41 @@ describe('which hosts and ports', () => {
       resolver: promises,
       smtp: { ports: [465] },
     }).probeSmtp('example.com');
+    // Node's default checks the certificate; nothing turns it off.
     expect(vi.mocked(tls.connect).mock.calls).toEqual([
-      [{ host: '127.0.0.1', port: 465, rejectUnauthorized: false }],
-      [
-        {
-          host: 'localhost',
-          port: 465,
-          servername: 'localhost',
-          rejectUnauthorized: false,
-        },
-      ],
+      [{ host: '127.0.0.1', port: 465 }],
+      [{ host: 'localhost', port: 465, servername: 'localhost' }],
     ]);
     expect(net.connect).not.toHaveBeenCalled();
+  });
+
+  it('is refused, with the TLS error, when the handshake fails', async () => {
+    // A plain-SMTP server: the TLS handshake with it can't succeed.
+    const server = await smtp();
+    const real = await vi.importActual<typeof tls>('node:tls');
+    // Port 465 needs root to listen on, so the connection is sent to the
+    // fake server's port instead.
+    const redirect = (options: tls.ConnectionOptions): tls.TLSSocket =>
+      real.connect({ ...options, port: server.port });
+    vi.mocked(tls.connect).mockImplementationOnce(
+      // The probe calls the options form of tls.connect, which this matches.
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+      redirect as typeof tls.connect,
+    );
+    zone.set('example.com', { MX: mx('127.0.0.1') });
+    const result = await createDnsValidator({
+      resolver: promises,
+      smtp: { ports: [465], timeout: 1000 },
+    }).probeSmtp('example.com');
+    expect(result).toMatchObject({
+      value: {
+        accepted: false,
+        probes: [{ port: 465, outcome: 'refused' }],
+      },
+    });
+    expect(result.ok && result.value.probes[0]?.message).toMatch(
+      /^The connection failed with ERR_SSL_/,
+    );
   });
 
   it('fails unparsable input before any lookup or connection', async () => {

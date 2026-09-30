@@ -124,14 +124,13 @@ export async function probePort(
 ): Promise<SmtpPortProbe> {
   return new Promise((resolve) => {
     const socket: Socket = implicitTls.has(port)
-      ? // A probe checks that a server answers, not who it is: many MX
-        // certificates don't match the MX host, and nothing secret is sent.
+      ? // The certificate is checked, as Node does by default: a server
+        // whose certificate doesn't verify is refused, with the TLS error.
         connectTls({
           host,
           port,
           // SNI takes host names only (RFC 6066 §3).
           ...(isIP(host) === 0 ? { servername: host } : {}),
-          rejectUnauthorized: false,
         })
       : connectTcp({ host, port });
     socket.setEncoding('latin1');

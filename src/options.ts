@@ -29,7 +29,8 @@ export interface DnsTimeout {
 export interface SmtpOptions {
   /**
    * The ports to probe on each host. 465 speaks TLS from the start (RFC
-   * 8314); the rest speak plain SMTP.
+   * 8314), and a certificate that doesn't verify makes the probe
+   * `refused`; the rest speak plain SMTP.
    *
    * @defaultValue `[25]`, where MX hosts take mail
    */

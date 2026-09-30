@@ -27,10 +27,10 @@
 import { createHash } from 'node:crypto';
 import {
   appendFileSync,
-  existsSync,
   mkdirSync,
   readFileSync,
   renameSync,
+  truncateSync,
   writeFileSync,
 } from 'node:fs';
 import { parseArgs } from 'node:util';
@@ -66,22 +66,57 @@ const built = '../dist/index.mjs';
 // oxlint-disable-next-line typescript/no-unsafe-assignment -- typed by the annotation
 const { createDnsValidator }: typeof Package = await import(built);
 
+/**
+ * The file at `path`, or `undefined` when there's none. Reading and
+ * catching, rather than checking first, leaves no gap for the file to
+ * change in between.
+ */
+function readIfPresent(path: string): string | undefined {
+  try {
+    return readFileSync(path, 'utf8');
+  } catch (error) {
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      error.code === 'ENOENT'
+    ) {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+// A Tranco list line: rank, then a domain name's characters.
+const trancoLine = /^\d+,[a-z\d._-]+$/i;
+
 /** The Tranco list, downloaded once and kept by its ID. */
 async function tranco(id: string): Promise<string> {
   const path = `.corpus/tranco-${id}.csv`;
-  if (!existsSync(path)) {
-    mkdirSync('.corpus', { recursive: true });
-    const response = await fetch(
-      `https://tranco-list.eu/download/${id}/1000000`,
-    );
-    if (!response.ok) {
-      throw new Error(`Tranco answered ${response.status} for list ${id}`);
-    }
-    // Written whole, then renamed, so a half-downloaded list never stays.
-    writeFileSync(`${path}.part`, await response.text());
-    renameSync(`${path}.part`, path);
+  const kept = readIfPresent(path);
+  if (kept !== undefined) {
+    return kept;
   }
-  return readFileSync(path, 'utf8');
+  const response = await fetch(`https://tranco-list.eu/download/${id}/1000000`);
+  if (!response.ok) {
+    throw new Error(`Tranco answered ${response.status} for list ${id}`);
+  }
+  const text = await response.text();
+  // Only a list of ranked domains is kept: anything else is refused before
+  // it reaches the disk.
+  const lines = text.split('\n').filter((line) => line.trim() !== '');
+  if (
+    lines.length === 0 ||
+    lines.length > 1_000_000 ||
+    !lines.every((line) => trancoLine.test(line.trim()))
+  ) {
+    throw new Error(`The download for list ${id} isn't a Tranco list`);
+  }
+  mkdirSync('.corpus', { recursive: true });
+  // Written whole, then renamed, so a half-downloaded list never stays.
+  writeFileSync(`${path}.part`, text);
+  renameSync(`${path}.part`, path);
+  return text;
 }
 
 /** Domains that accepted, to probe again as controls. */
@@ -89,13 +124,14 @@ const controls: string[] = [];
 
 /** The domains written so far, after dropping a line a crash cut short. */
 function writtenSoFar(): Set<string> {
-  if (!existsSync(out)) {
+  const text = readIfPresent(out);
+  if (text === undefined) {
     return new Set();
   }
-  const text = readFileSync(out, 'utf8');
   const whole = text.slice(0, text.lastIndexOf('\n') + 1);
   if (whole !== text) {
-    writeFileSync(out, whole);
+    // Cut the torn tail off in place, leaving every whole line untouched.
+    truncateSync(out, Buffer.byteLength(whole));
   }
   const domains = new Set<string>();
   for (const line of whole.split('\n').filter((row) => row !== '')) {
