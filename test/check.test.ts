@@ -1,12 +1,31 @@
-// checkDns and isValidDns against a fake DNS: the verdict by RFC rules, the
-// signals, parsing before any lookup, and what failed lookups do.
+// The check against a fake DNS: the verdict by RFC rules, the signals,
+// parsing before any lookup, and what failed lookups do. checkDns is the
+// same code over a cache every call shares, so each case here checks with a
+// fresh validator instead; defaults.test.ts covers checkDns itself.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { checkDns, type DnsSignals, isValidDns } from '../src';
-import { mx, queries, reset, zone } from './fake-dns';
+import * as dns from '../src';
+import type { DnsOptions, DnsSignals, Result } from '../src';
+import { mx, promises, queries, reset, zone } from './fake-dns';
 
 vi.mock('node:dns/promises', async () => (await import('./fake-dns')).promises);
 
 beforeEach(reset);
+
+async function checkDns(
+  input: string,
+  options?: DnsOptions,
+): Promise<Result<DnsSignals>> {
+  return dns
+    .createDnsValidator({ ...options, resolver: promises })
+    .check(input);
+}
+
+async function isValidDns(
+  input: string,
+  options?: DnsOptions,
+): Promise<boolean> {
+  return (await checkDns(input, options)).ok;
+}
 
 const unparsable = { ok: false, reason: 'dns.address.unparsable' };
 
@@ -121,14 +140,6 @@ describe('the verdict', () => {
     expect(await checkDns('ada@example.com')).toMatchObject({
       reason: 'dns.domain.not_found',
     });
-  });
-
-  it('isValidDns is checkDns(…).ok', async () => {
-    zone.set('example.com', { MX: mx('mx.example.com') });
-    zone.set('null.example.com', { MX: [{ exchange: '', priority: 0 }] });
-    expect(await isValidDns('ada@example.com')).toBe(true);
-    expect(await isValidDns('ada@null.example.com')).toBe(false);
-    expect(await isValidDns('not an address')).toBe(false);
   });
 });
 
@@ -274,7 +285,7 @@ describe('the input', () => {
   ])('rejects with a TypeError for %s', async (_, input, options) => {
     await expect(
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      checkDns(input as string, options as never),
+      dns.checkDns(input as string, options as never),
     ).rejects.toThrow(TypeError);
     expect(queries).toEqual([]);
   });

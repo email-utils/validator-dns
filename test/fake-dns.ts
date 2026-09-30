@@ -1,13 +1,14 @@
 // A fake DNS for the tests to mock node:dns and node:dns/promises with. It
 // answers on the microtask queue, as a real resolver answers after a tick.
+import type { DnsResolver } from '../src';
 
 export type RecordType = 'MX' | 'A' | 'AAAA' | 'TXT' | 'NS';
 
 /**
  * A record set, or the error code the lookup fails with; `null` fails it
- * with an error that has no code.
+ * with an error that has no code, and `'silent'` never answers.
  */
-export type Answer = readonly unknown[] | { error: string | null };
+export type Answer = readonly unknown[] | { error: string | null } | 'silent';
 
 /** The zone: each domain's answers by record type. */
 export const zone: Map<string, Partial<Record<RecordType, Answer>>> = new Map();
@@ -23,14 +24,19 @@ export function reset(): void {
 export const mx = (...exchanges: string[]): Answer =>
   exchanges.map((exchange, i) => ({ exchange, priority: (i + 1) * 10 }));
 
-function answer(domain: string, type: RecordType): Promise<unknown[]> {
+/** The records set for `domain`, taken as what the test says they are. */
+function answer<T>(domain: string, type: RecordType): Promise<T[]> {
   queries.push(`${type} ${domain}`);
   const records = zone.get(domain);
   const found = records?.[type];
   return new Promise((resolve, reject) => {
+    if (found === 'silent') {
+      return;
+    }
     queueMicrotask(() => {
       if (found !== undefined && !('error' in found)) {
-        resolve([...found]);
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+        resolve([...found] as T[]);
         return;
       }
       const code =
@@ -45,13 +51,8 @@ function answer(domain: string, type: RecordType): Promise<unknown[]> {
   });
 }
 
-type Query = (domain: string) => Promise<unknown[]>;
-
-/** The node:dns/promises functions validator-dns uses. */
-export const promises: Record<
-  'resolveMx' | 'resolve4' | 'resolve6' | 'resolveTxt',
-  Query
-> = {
+/** The node:dns/promises functions validator-dns uses, and its resolver. */
+export const promises: DnsResolver = {
   resolveMx: (domain: string) => answer(domain, 'MX'),
   resolve4: (domain: string) => answer(domain, 'A'),
   resolve6: (domain: string) => answer(domain, 'AAAA'),

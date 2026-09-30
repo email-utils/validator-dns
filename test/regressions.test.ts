@@ -1,9 +1,10 @@
 // The 0.0.1 behaviors validator-dns#7 changed, each pinned twice: what the
 // 0.0.1 class returned, checked against it here so each case keeps showing
-// what it was, and what checkDns returns now.
+// what it was, and what checkDns returns now. Each case checks with a fresh
+// validator, since checkDns keeps answers in a cache every call shares.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { checkDns, isValidDns } from '../src';
-import { mx, queries, reset, zone } from './fake-dns';
+import { createDnsValidator, type DnsSignals, type Result } from '../src';
+import { mx, promises, queries, reset, zone } from './fake-dns';
 import EmailDnsValidator from './legacy/validator';
 
 vi.mock('node:dns', async () => (await import('./fake-dns')).callbacks);
@@ -25,6 +26,14 @@ vi.mock('node:net', () => ({
 }));
 
 beforeEach(reset);
+
+async function checkDns(input: string): Promise<Result<DnsSignals>> {
+  return createDnsValidator({ resolver: promises }).check(input);
+}
+
+async function isValidDns(input: string): Promise<boolean> {
+  return (await checkDns(input)).ok;
+}
 
 // The 0.0.1 config that scores MX alone, for the cases about MX.
 const mxOnly = { ns: -1, a: -1, spf: -1, port: -1, mx: 100, validScore: 100 };
