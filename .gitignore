@@ -2,11 +2,9 @@ node_modules/
 dist/
 coverage/
 .reports/
+.cache/
 *.tgz
 .DS_Store
 
 # Personal Claude Code settings; shared ones go in .claude/settings.json.
 .claude/settings.local.json
-
-# Downloaded Tranco lists for scripts/corpus.ts, kept by list ID.
-.corpus/
