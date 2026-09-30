@@ -30,6 +30,38 @@ function µs(ns: number): string {
   return `${(ns / 1000).toFixed(2)} µs`;
 }
 
+/** The largest of `values` by `by`, with what it came from. */
+function worst<T>(values: readonly T[], by: (value: T) => number) {
+  return values.reduce((a, b) => (by(b) > by(a) ? b : a));
+}
+
+// One line per budget in the log, so a runner's headroom shows even when
+// every budget holds.
+const oversized = worst(
+  report.oversized.flatMap(({ name, times }) =>
+    times.map(({ size, ns }) => ({ name, size, ns })),
+  ),
+  ({ ns }) => ns,
+);
+const linear = worst(
+  report.linear.flatMap(({ name, times }) =>
+    times.slice(1).map(({ size, ns }, i) => ({
+      name,
+      size,
+      ratio: ns / (times[i]?.ns ?? 0),
+    })),
+  ),
+  ({ ratio }) => ratio,
+);
+const adversarial = worst(report.adversarial, ({ ns }) => ns);
+console.info(
+  [
+    `Budget, input past the cap: ${µs(oversized.ns)} of 1 µs (${oversized.name}, ${oversized.size} characters)`,
+    `Budget, linearity: ×${linear.ratio.toFixed(2)} of ×2.5 (${linear.name}, to ${linear.size})`,
+    `Budget, adversarial input: ${µs(adversarial.ns)} of 50 µs (${adversarial.name})`,
+  ].join('\n'),
+);
+
 describe('input past the cap', () => {
   it.each(report.oversized)(
     '$name is rejected, with no lookup',

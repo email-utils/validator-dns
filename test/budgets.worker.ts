@@ -99,8 +99,29 @@ async function perCall(
 }
 
 /**
+ * Calls `fn` until the engine has compiled it: `calls` times, since V8
+ * optimizes code by how often it runs, not for how long, so a slow runner
+ * needs as many calls as a fast one. A call so costly that `ms` pass first
+ * has run its own loops often enough by then.
+ */
+async function warmUp(
+  fn: () => Promise<unknown>,
+  calls = 5000,
+  ms = 100,
+): Promise<void> {
+  const start = performance.now();
+  for (let call = 0; call < calls; call++) {
+    // oxlint-disable-next-line no-await-in-loop -- one call at a time, as timed
+    await fn();
+    if (performance.now() - start > ms) {
+      return;
+    }
+  }
+}
+
+/**
  * How many calls of `fn` fill about `ms`, so cheap and costly calls are
- * timed alike. Making them warms the code and the cache up.
+ * timed alike. Warm `fn` up first: this doesn't make enough calls to.
  */
 async function callsIn(fn: () => Promise<unknown>, ms: number) {
   let calls = 0;
@@ -159,29 +180,39 @@ const functions: readonly [string, (input: string) => Promise<unknown>][] = [
 ];
 
 async function timeOversized(): Promise<Report['oversized']> {
-  const report: Report['oversized'] = [];
-  for (const [shape, make] of oversized) {
+  const runs = oversized.flatMap(([shape, make]) => {
     const inputs = oversizes.map(make);
-    for (const [name, fn] of functions) {
-      // oxlint-disable-next-line no-await-in-loop -- one function at a time, so the fakes' records are its own
-      const results = await Promise.all(inputs.map(async (input) => fn(input)));
-      const times: Times = [];
-      for (const input of inputs) {
-        const call = async () => fn(input);
-        // oxlint-disable-next-line no-await-in-loop -- timed one at a time
-        const calls = await callsIn(call, 1);
-        // oxlint-disable-next-line no-await-in-loop -- timed one at a time
-        times.push({ size: input.length, ns: await perCall(call, calls, 7) });
-      }
-      report.push({
-        name: `${name} with ${shape}`,
-        rejected:
-          results.every(unparsable) &&
-          queries.length === 0 &&
-          sockets.connections.length === 0,
-        times,
-      });
+    return functions.map(([name, fn]) => ({ shape, inputs, name, fn }));
+  });
+  // Everything is warmed up before anything is timed, so the first function
+  // timed isn't timed before the engine has compiled the code they share.
+  for (const { inputs, fn } of runs) {
+    for (const input of inputs) {
+      // oxlint-disable-next-line no-await-in-loop -- one at a time
+      await warmUp(async () => fn(input));
     }
+  }
+  queries.length = 0;
+  const report: Report['oversized'] = [];
+  for (const { shape, inputs, name, fn } of runs) {
+    // oxlint-disable-next-line no-await-in-loop -- one function at a time, so the fakes' records are its own
+    const results = await Promise.all(inputs.map(async (input) => fn(input)));
+    const times: Times = [];
+    for (const input of inputs) {
+      const call = async () => fn(input);
+      // oxlint-disable-next-line no-await-in-loop -- timed one at a time
+      const calls = await callsIn(call, 1);
+      // oxlint-disable-next-line no-await-in-loop -- timed one at a time
+      times.push({ size: input.length, ns: await perCall(call, calls, 7) });
+    }
+    report.push({
+      name: `${name} with ${shape}`,
+      rejected:
+        results.every(unparsable) &&
+        queries.length === 0 &&
+        sockets.connections.length === 0,
+      times,
+    });
   }
   return report;
 }
@@ -333,7 +364,7 @@ async function series(
   calls: readonly number[],
 ): Promise<number[]> {
   const best = fns.map(() => Infinity);
-  for (let round = 0; round < 7; round++) {
+  for (let round = 0; round < 15; round++) {
     for (const [i, fn] of fns.entries()) {
       // oxlint-disable-next-line no-await-in-loop -- timed one at a time
       const ns = await perCall(fn, calls[i] ?? 1, 1);
@@ -348,21 +379,32 @@ function isLinear(times: readonly number[]): boolean {
 }
 
 async function timeLinear(): Promise<Report['linear']> {
+  const runs = linear.map(([name, make, sizes]) => ({
+    name,
+    sizes,
+    fns: sizes.map(make),
+  }));
+  // Every shape at every size is warmed up before any is timed.
+  for (const { fns } of runs) {
+    for (const fn of fns) {
+      // oxlint-disable-next-line no-await-in-loop -- one at a time
+      await warmUp(fn);
+    }
+  }
   const report: Report['linear'] = [];
-  for (const [name, make, sizes] of linear) {
-    const fns = sizes.map(make);
+  for (const { name, sizes, fns } of runs) {
     const calls: number[] = [];
     for (const fn of fns) {
       // oxlint-disable-next-line no-await-in-loop -- timed one at a time
-      calls.push(await callsIn(fn, 5));
+      calls.push(await callsIn(fn, 1));
     }
-    // A series with a step over 2.5 is measured again, twice at most,
+    // A series with a step over 2.5 is measured again, four times at most,
     // keeping each size's best: a slow patch on the runner can't hold up
-    // linear code three times running, and superlinear code is over every
+    // linear code five times running, and superlinear code is over every
     // time.
     // oxlint-disable-next-line no-await-in-loop -- timed one at a time
     let times = await series(fns, calls);
-    for (let retry = 0; retry < 2 && !isLinear(times); retry++) {
+    for (let retry = 0; retry < 4 && !isLinear(times); retry++) {
       // oxlint-disable-next-line no-await-in-loop -- timed one at a time
       const again = await series(fns, calls);
       times = times.map((ns, i) => Math.min(ns, again[i] ?? Infinity));
@@ -448,8 +490,10 @@ async function timeAdversarial(seed: number): Promise<Report['adversarial']> {
   // first calls, still interpreted, are warm-up, not input.
   zone.set('example.com', { MX: [], A: ['192.0.2.1'] });
   for (const dns of Object.values(validators)) {
-    // oxlint-disable-next-line no-await-in-loop -- warming up in turn
-    await perCall(async () => dns.score('ada@example.com'), 500, 1);
+    for (const method of methods) {
+      // oxlint-disable-next-line no-await-in-loop -- warming up in turn
+      await warmUp(async () => dns[method]('ada@example.com'));
+    }
   }
   const report: Report['adversarial'] = [];
   for (const [name, arbitrary] of adversarial) {
