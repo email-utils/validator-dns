@@ -66,7 +66,10 @@ const notHostname = /[^\da-z.\-\u0080-\u{10ffff}]/iu;
  * The domain to look up for `input`, as A-labels, or why there's none.
  * A string without an `@` is taken as a bare domain.
  */
-function target(input: string, rules: Readonly<Rules>): string | Failure {
+export function target(
+  input: string,
+  rules: Readonly<Rules>,
+): string | Failure {
   // The syntax rules' `maxLength`, 512 by default, caps the input before
   // it's trimmed: longer input, padding and all, is rejected unread, so its
   // size costs nothing (validator-dns#11).
