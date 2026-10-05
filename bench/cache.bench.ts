@@ -12,14 +12,10 @@ const resolver: DnsResolver = {
   resolveTxt: async () => [['v=spf1 -all']],
 };
 
-// validator-dns#8 targets 2 µs for a check whose answers are all cached, in
-// `task.meta.bench` (bench/meta.ts) for the nightly job
-// (email-utils/meta#21), not the PR gate.
+// validator-dns#8 targets 2 µs for a check whose answers are all cached.
 const validator = createDnsValidator({ resolver });
 
-test('a cache hit', async ({ bench, task }) => {
-  const target = { p50: 2000, source: 'validator-dns#8' };
-  task.meta.bench = { address: target, 'bare domain': target };
+test('a cache hit', async ({ bench }) => {
   await validator.check('ada@example.com');
   await bench('address', async () => {
     await validator.check('ada@example.com');
