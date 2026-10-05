@@ -22,9 +22,9 @@ jobs:
     permissions:
       contents: read # check out meta's conventions file
       pull-requests: read # read the PR's title and labels
-    uses: email-utils/meta/.github/workflows/pr-title.yml@cde3dafbb145f72000b226ea90582d331ca9424b
+    uses: email-utils/meta/.github/workflows/pr-title.yml@f5c229322abb836e1cc0df843e1f8ae3c40fc3c9
 
   api-report:
     permissions:
       contents: read # check out the package and meta's check
-    uses: email-utils/meta/.github/workflows/api-report.yml@cde3dafbb145f72000b226ea90582d331ca9424b
+    uses: email-utils/meta/.github/workflows/api-report.yml@f5c229322abb836e1cc0df843e1f8ae3c40fc3c9

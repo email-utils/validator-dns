@@ -21,11 +21,9 @@ zone.set('example.com', {
 });
 
 // validator-dns#8 targets 2 µs for a check whose answers are all cached;
-// isValidDns and scoreDns are that check and a little more. It's in
-// `task.meta.bench` (bench/meta.ts) for the nightly job
-// (email-utils/meta#21), not the PR gate. The others have no stated target.
-test('top-level functions, cached', async ({ bench, task }) => {
-  task.meta.bench = { checkDns: { p50: 2000, source: 'validator-dns#8' } };
+// isValidDns and scoreDns are that check and a little more. The others have
+// no stated target.
+test('top-level functions, cached', async ({ bench }) => {
   const address = 'ada@example.com';
   await checkDns(address);
   await bench('checkDns', async () => {

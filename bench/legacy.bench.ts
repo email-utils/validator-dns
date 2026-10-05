@@ -1,4 +1,4 @@
-// 0.0.1 and v1 side by side, for the legacy ratio meta#20 reports. 0.0.1 is
+// 0.0.1 and v1 side by side, for the docs' legacy ratio. 0.0.1 is
 // the last prerelease published, 0.0.1-2, installed as
 // `validator-dns-0.0.1`. It looks up through node:dns's callback `resolve`,
 // which bench/built.ts patches to the fake DNS, and its port probes, which
@@ -24,15 +24,10 @@ const afterEach = (): void => {
 };
 
 // No ratio target is stated for validator-dns (validator-dns#11 names
-// none), so `task.meta.bench` (bench/meta.ts) pairs the benches for the
-// legacy column of meta#20's table, without a target. 0.0.1 has no cache, so
-// each of its checks makes four lookups (NS, MX, TXT, A), as an uncached v1
-// check does (MX, A, AAAA, TXT); the cached v1 check is what v1 adds.
-test('legacy ratio', async ({ bench, task }) => {
-  task.meta.bench = {
-    'v1, uncached': { legacy: 'validator-dns 0.0.1' },
-    'v1, cached': { legacy: 'validator-dns 0.0.1' },
-  };
+// none), so this only records the ratio. 0.0.1 has no cache, so each of its
+// checks makes four lookups (NS, MX, TXT, A), as an uncached v1 check does
+// (MX, A, AAAA, TXT); the cached v1 check is what v1 adds.
+test('legacy ratio', async ({ bench }) => {
   const legacy = new Legacy({ port: -1 });
   const uncached = dns.createDnsValidator({ resolver: promises, cacheTtl: 0 });
   const cached = dns.createDnsValidator({ resolver: promises });
