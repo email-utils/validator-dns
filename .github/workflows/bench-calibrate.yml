@@ -1,0 +1,21 @@
+name: Bench calibration
+
+# Measures the noise the PR gate's `bench / compare` allows each benchmark:
+# ten runners each bench the branch it's run on twice. Run it by hand from
+# the Actions tab after adding or renaming benchmarks, or when the runner
+# image changes, then commit the `bench-noise` artifact as bench/noise.json.
+# Until then, every benchmark gets the 10% floor.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  bench-calibrate:
+    permissions:
+      contents: read # check out the package and meta's scripts
+    uses: email-utils/meta/.github/workflows/bench-calibrate.yml@cde3dafbb145f72000b226ea90582d331ca9424b
