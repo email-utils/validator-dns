@@ -1,9 +1,11 @@
 name: PR title
 
-# The title becomes the squash commit, so it must be a conventional commit.
+# The title becomes the squash commit, so it must be a conventional commit,
+# and it must release what the PR changes in the API report in api/.
 # Separate from pr-gate.yml because it also runs on `edited`, so fixing a
 # title rechecks it without rerunning every check, and on label changes,
-# since release-please's label exempts its release PRs.
+# since release-please's label exempts its release PRs and `api: reviewed`
+# passes the API report check.
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened, labeled, unlabeled]
@@ -20,4 +22,9 @@ jobs:
     permissions:
       contents: read # check out meta's conventions file
       pull-requests: read # read the PR's title and labels
-    uses: email-utils/meta/.github/workflows/pr-title.yml@ec3ca4ef7f891a3ae2b3e28b56c3603399ea13a5
+    uses: email-utils/meta/.github/workflows/pr-title.yml@2806e9e84bdc8915c8da8a6b133552c421b18ce1
+
+  api-report:
+    permissions:
+      contents: read # check out the package and meta's check
+    uses: email-utils/meta/.github/workflows/api-report.yml@2806e9e84bdc8915c8da8a6b133552c421b18ce1

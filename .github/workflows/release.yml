@@ -22,7 +22,7 @@ jobs:
     permissions:
       contents: write # attach the benchmark results to the GitHub release
       id-token: write # npm trusted publishing and provenance
-    uses: email-utils/meta/.github/workflows/release.yml@ec3ca4ef7f891a3ae2b3e28b56c3603399ea13a5
+    uses: email-utils/meta/.github/workflows/release.yml@2806e9e84bdc8915c8da8a6b133552c421b18ce1
     with:
       app-client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
     secrets:
