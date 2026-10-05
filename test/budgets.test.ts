@@ -1,6 +1,7 @@
 // validator-dns#11's deterministic budgets: time that doesn't depend on the
 // runner's speed, or only loosely. Input past the default 512-character cap
-// is rejected in constant time, unread and with no lookup; time grows
+// is rejected in constant time, unread and with no lookup: as fast at 8 MB as
+// just past the cap, and well within a runner's async overhead; time grows
 // linearly with the input up to the cap, and with the answers; and no
 // generated input takes long. test/budgets.worker.ts does the timing, in a
 // thread v8 coverage doesn't instrument, against the fakes; this checks
@@ -37,11 +38,28 @@ function worst<T>(values: readonly T[], by: (value: T) => number) {
 
 // One line per budget in the log, so a runner's headroom shows even when
 // every budget holds.
-const oversized = worst(
-  report.oversized.flatMap(({ name, times }) =>
+/** Each size's time, with the name of what was timed. */
+const flat = (entries: Report['oversized'] | Report['lengthCheck']) =>
+  entries.flatMap(({ name, times }) =>
     times.map(({ size, ns }) => ({ name, size, ns })),
-  ),
-  ({ ns }) => ns,
+  );
+
+/** The largest size's time over the smallest's, with those sizes. */
+function sizeRatio(times: Report['oversized'][number]['times']) {
+  const first = times[0];
+  const last = times.at(-1);
+  return {
+    from: first?.size,
+    to: last?.size,
+    ratio: (last?.ns ?? Infinity) / (first?.ns ?? 0),
+  };
+}
+
+const lengthCheck = worst(flat(report.lengthCheck), ({ ns }) => ns);
+const oversized = worst(flat(report.oversized), ({ ns }) => ns);
+const constant = worst(
+  report.oversized.map(({ name, times }) => ({ name, ...sizeRatio(times) })),
+  ({ ratio }) => ratio,
 );
 const linear = worst(
   report.linear.flatMap(({ name, times }) =>
@@ -56,7 +74,9 @@ const linear = worst(
 const adversarial = worst(report.adversarial, ({ ns }) => ns);
 console.info(
   [
-    `Budget, input past the cap: ${µs(oversized.ns)} of 1 µs (${oversized.name}, ${oversized.size} characters)`,
+    `Budget, input past the cap, length check: ${lengthCheck.ns.toFixed(1)} ns of 1,000 ns (${lengthCheck.name}, ${lengthCheck.size} characters)`,
+    `Budget, input past the cap, awaited: ${µs(oversized.ns)} of 5 µs (${oversized.name}, ${oversized.size} characters)`,
+    `Budget, input past the cap, size ratio: ×${constant.ratio.toFixed(2)} of ×1.5 (${constant.name}, ${constant.to} over ${constant.from} characters)`,
     `Budget, linearity: ×${linear.ratio.toFixed(2)} of ×2.5 (${linear.name}, to ${linear.size})`,
     `Budget, adversarial input: ${µs(adversarial.ns)} of 50 µs (${adversarial.name})`,
   ].join('\n'),
@@ -70,9 +90,39 @@ describe('input past the cap', () => {
     },
   );
 
-  // validator-dns#11 budget: ≤ 1 µs at any size.
-  it.each(report.oversized)('$name is rejected in ≤ 1 µs', ({ times }) => {
-    const over = times.filter(({ ns }) => ns > 1000);
+  // validator-dns#39 budget: the largest input, 8 MB, takes ≤ 1.5× what
+  // input just past the cap does. A ratio of two times from the same run
+  // holds on any runner.
+  it.each(report.oversized)(
+    '$name is rejected as fast at any size',
+    ({ times }) => {
+      const { from, to, ratio } = sizeRatio(times);
+      expect(
+        ratio <= 1.5
+          ? []
+          : [`${to} over ${from} characters: ×${ratio.toFixed(2)}`],
+      ).toEqual([]);
+    },
+  );
+
+  // validator-dns#11 budget, for the check the cap controls: ≤ 1 µs at any
+  // size.
+  it.each(report.lengthCheck)(
+    'the length check rejects $name in ≤ 1 µs',
+    ({ rejected, times }) => {
+      expect(rejected).toBe(true);
+      const over = times.filter(({ ns }) => ns > 1000);
+      expect(
+        over.map(({ size, ns }) => `${size} characters: ${µs(ns)}`),
+      ).toEqual([]);
+    },
+  );
+
+  // validator-dns#39 budget: ≤ 5 µs at any size for the awaited call, which
+  // adds a promise, a result, and an await to the length check. That fixed
+  // overhead is ~0.2 µs on Apple Silicon and up to 1.5 µs on a GitHub runner.
+  it.each(report.oversized)('$name is rejected in ≤ 5 µs', ({ times }) => {
+    const over = times.filter(({ ns }) => ns > 5000);
     expect(over.map(({ size, ns }) => `${size} characters: ${µs(ns)}`)).toEqual(
       [],
     );

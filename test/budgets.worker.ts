@@ -47,6 +47,8 @@ const {
   probeSmtp,
   scoreDns,
 } = await import('../src/index.ts');
+const { target } = await import('../src/check.ts');
+const { resolve } = await import('../src/options.ts');
 
 type DnsValidator = ReturnType<typeof createDnsValidator>;
 
@@ -65,6 +67,11 @@ export interface Report {
    * rejected as unparsable with no lookup or connection, and its times.
    */
   oversized: { name: string; rejected: boolean; times: Times }[];
+  /**
+   * Each oversized shape, through the synchronous length check: whether
+   * every call rejected it, and its times.
+   */
+  lengthCheck: { name: string; rejected: boolean; times: Times }[];
   /** Each worst-case shape, at sizes that double: its times. */
   linear: { name: string; times: Times }[];
   /** Each arbitrary: its slowest input, with the preset and method it ran with. */
@@ -179,6 +186,18 @@ const functions: readonly [string, (input: string) => Promise<unknown>][] = [
   ['validator.probeSmtp', async (input) => validator.probeSmtp(input)],
 ];
 
+/**
+ * Whether `times`, from the smallest size to the largest, are within the
+ * budgets for input past the cap: the largest size takes at most 1.5× what
+ * the smallest does, and none takes over 5 µs.
+ */
+function isConstant(times: readonly number[]): boolean {
+  return (
+    (times.at(-1) ?? Infinity) / (times[0] ?? 0) <= 1.5 &&
+    times.every((ns) => ns <= 5000)
+  );
+}
+
 async function timeOversized(): Promise<Report['oversized']> {
   const runs = oversized.flatMap(([shape, make]) => {
     const inputs = oversizes.map(make);
@@ -197,21 +216,22 @@ async function timeOversized(): Promise<Report['oversized']> {
   for (const { shape, inputs, name, fn } of runs) {
     // oxlint-disable-next-line no-await-in-loop -- one function at a time, so the fakes' records are its own
     const results = await Promise.all(inputs.map(async (input) => fn(input)));
-    const times: Times = [];
-    for (const input of inputs) {
-      const call = async () => fn(input);
+    const fns = inputs.map((input) => async () => fn(input));
+    const calls: number[] = [];
+    for (const call of fns) {
       // oxlint-disable-next-line no-await-in-loop -- timed one at a time
-      const calls = await callsIn(call, 1);
+      calls.push(await callsIn(call, 1));
+    }
+    // The sizes take turns, so they're compared under the same load. A
+    // series over its budgets is measured again, four times at most, keeping
+    // each size's best: noise, such as a collection landing in a batch, only
+    // adds time, and a real regression is over every time.
+    // oxlint-disable-next-line no-await-in-loop -- timed one at a time
+    let times = await series(fns, calls);
+    for (let retry = 0; retry < 4 && !isConstant(times); retry++) {
       // oxlint-disable-next-line no-await-in-loop -- timed one at a time
-      let ns = await perCall(call, calls, 7);
-      // A size over the 1 µs budget is measured again, four times at most,
-      // keeping its best: noise, such as a collection landing in a batch,
-      // only adds time, and a real regression is over every time.
-      for (let retry = 0; retry < 4 && ns > 1000; retry++) {
-        // oxlint-disable-next-line no-await-in-loop -- timed one at a time
-        ns = Math.min(ns, await perCall(call, calls, 7));
-      }
-      times.push({ size: input.length, ns });
+      const again = await series(fns, calls);
+      times = times.map((ns, i) => Math.min(ns, again[i] ?? Infinity));
     }
     report.push({
       name: `${name} with ${shape}`,
@@ -219,10 +239,67 @@ async function timeOversized(): Promise<Report['oversized']> {
         results.every(unparsable) &&
         queries.length === 0 &&
         sockets.connections.length === 0,
-      times,
+      times: inputs.map((input, i) => ({
+        size: input.length,
+        ns: times[i] ?? Infinity,
+      })),
     });
   }
   return report;
+}
+
+/**
+ * The length check alone, with no promise or await around it: the part the
+ * cap controls, and what's left when the async overhead, fixed but several
+ * times slower on a shared runner, is taken out. The sizes take turns as in
+ * {@link series}, best of 15 batches.
+ */
+function timeLengthCheck(): Report['lengthCheck'] {
+  const rules = resolve();
+  return oversized.map(([shape, make]) => {
+    const inputs = oversizes.map(make);
+    // Calls that returned a domain rather than a failure. Counting them also
+    // uses each result, so the engine can't drop a call as unused.
+    let accepted = 0;
+    /**
+     * Calls `target` on `input` until `calls` are made or `ms` pass. A timed
+     * batch passes `Infinity`, so it doesn't read the clock on every call.
+     */
+    const run = (input: string, calls: number, ms: number) => {
+      const start = performance.now();
+      let made = 0;
+      while (made < calls) {
+        accepted += typeof target(input, rules) === 'string' ? 1 : 0;
+        made++;
+        if (ms !== Infinity && performance.now() - start >= ms) {
+          break;
+        }
+      }
+      return { made, ns: ((performance.now() - start) / made) * 1e6 };
+    };
+    // Warmed up as warmUp does, then each size's batch is the calls that
+    // fill about 1 ms, so a regression that reads the input fails the
+    // budget rather than running for minutes.
+    const calls = inputs.map((input) => {
+      run(input, 5000, 100);
+      return run(input, Infinity, 1).made;
+    });
+    const best = inputs.map(() => Infinity);
+    for (let round = 0; round < 15; round++) {
+      for (const [i, input] of inputs.entries()) {
+        const { ns } = run(input, calls[i] ?? 1, Infinity);
+        best[i] = Math.min(best[i] ?? Infinity, ns);
+      }
+    }
+    return {
+      name: shape,
+      rejected: accepted === 0,
+      times: inputs.map((input, i) => ({
+        size: input.length,
+        ns: best[i] ?? Infinity,
+      })),
+    };
+  });
 }
 
 /** A resolver that gives every domain the same answers. */
@@ -539,6 +616,7 @@ async function timeAdversarial(seed: number): Promise<Report['adversarial']> {
 const seed = workerData as number;
 const report: Report = {
   oversized: await timeOversized(),
+  lengthCheck: timeLengthCheck(),
   linear: await timeLinear(),
   adversarial: await timeAdversarial(seed),
 };
