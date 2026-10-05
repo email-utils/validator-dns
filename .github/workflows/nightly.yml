@@ -61,7 +61,7 @@ jobs:
 
       - name: Write job summary
         if: always()
-        uses: email-utils/meta/.github/actions/job-summary@2806e9e84bdc8915c8da8a6b133552c421b18ce1
+        uses: email-utils/meta/.github/actions/job-summary@cde3dafbb145f72000b226ea90582d331ca9424b
         with:
           check-name: Fresh dependencies
           outcome: ${{ steps.run.outcome }}

@@ -24,10 +24,15 @@ const afterEach = (): void => {
 };
 
 // No ratio target is stated for validator-dns (validator-dns#11 names
-// none), so this records the ratio for meta#20 without gating it. 0.0.1 has no cache, so each of
-// its checks makes four lookups (NS, MX, TXT, A), as an uncached v1 check
-// does (MX, A, AAAA, TXT); the cached v1 check is what v1 adds.
-test('legacy ratio', async ({ bench }) => {
+// none), so `task.meta.bench` (bench/meta.ts) pairs the benches for the
+// legacy column of meta#20's table, without a target. 0.0.1 has no cache, so
+// each of its checks makes four lookups (NS, MX, TXT, A), as an uncached v1
+// check does (MX, A, AAAA, TXT); the cached v1 check is what v1 adds.
+test('legacy ratio', async ({ bench, task }) => {
+  task.meta.bench = {
+    'v1, uncached': { legacy: 'validator-dns 0.0.1' },
+    'v1, cached': { legacy: 'validator-dns 0.0.1' },
+  };
   const legacy = new Legacy({ port: -1 });
   const uncached = dns.createDnsValidator({ resolver: promises, cacheTtl: 0 });
   const cached = dns.createDnsValidator({ resolver: promises });
