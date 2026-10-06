@@ -193,6 +193,32 @@ describe('the model', () => {
     expect(scored).toMatchObject({ value: { probability: logistic(0) } });
   });
 
+  it('leaves out a coefficient set to undefined', async () => {
+    zone.set('example.com', { MX: mx('mx.example.com') });
+    const scored = await validator({
+      scoreModel: {
+        ...model,
+        coefficients: { hasMx: 2, hasSpf: undefined, mxHosts: undefined },
+      },
+    }).score('example.com');
+    expect(scored.ok && scored.value.contributions).toEqual({ hasMx: 2 });
+    expect(scored).toMatchObject({
+      value: { probability: logistic(-1 + 2) },
+    });
+  });
+
+  it('throws a TypeError for a coefficient for no feature set to undefined', () => {
+    expect(() =>
+      validator({
+        scoreModel: {
+          ...model,
+          // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+          coefficients: { hasNs: undefined } as never,
+        },
+      }),
+    ).toThrow(TypeError);
+  });
+
   it('throws a TypeError for a name that isn’t bundled', () => {
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion
     expect(() => validator({ scoreModel: 'weights.json' as never })).toThrow(

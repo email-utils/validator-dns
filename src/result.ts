@@ -1,7 +1,11 @@
-// The shared result shapes from the API conventions (meta docs/api/
-// conventions.md), declared here so no package depends on another for types.
+// The shared result shapes from the API conventions
+// (https://email-utils.github.io/meta/docs/reference/conventions#results),
+// declared here so no package depends on another for types.
 
-/** The `dns.*` codes from the reason-code catalogue (meta docs/api/reason-codes.md). */
+/**
+ * The `dns.*` codes from the reason-code catalogue
+ * (https://email-utils.github.io/meta/docs/reference/reason-codes#validator-dns).
+ */
 export type ReasonCode =
   | 'dns.address.unparsable'
   | 'dns.domain.not_found'
