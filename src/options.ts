@@ -18,7 +18,10 @@ export interface DnsTimeout {
   query?: number | undefined;
   /**
    * How long the whole check may take; lookups still in flight then count
-   * as timed out.
+   * as timed out. The lookups run at once, each held to the lower of
+   * `query` and `overall`, so `overall` only has an effect when it's lower
+   * than `query`. With the defaults, a check settles within about 2
+   * seconds.
    *
    * @defaultValue 5000
    */

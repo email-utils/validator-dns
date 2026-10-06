@@ -24,8 +24,11 @@ export interface DnsScoreModel {
   id: string;
   version: string;
   intercept: number;
-  /** Fitted log-odds coefficients, not hand-chosen points. */
-  coefficients: Partial<Record<ScoreFeature, number>>;
+  /**
+   * Fitted log-odds coefficients, not hand-chosen points. A feature left
+   * out, or set to `undefined`, isn't counted.
+   */
+  coefficients: { [K in ScoreFeature]?: number | undefined };
 }
 
 /** What {@link scoreDns} estimates, and from what. */
@@ -117,6 +120,10 @@ export function checkModel(model: unknown, name: string): DnsScoreModel {
       throw new TypeError(
         `Expected \`${name}.coefficients\` to hold only ${features.join(', ')}, not ${key}`,
       );
+    }
+    // Like an option, a coefficient set to `undefined` is one not given.
+    if (value === undefined) {
+      continue;
     }
     if (!isWeight(value)) {
       throw new TypeError(

@@ -212,7 +212,7 @@ describe('the options', () => {
         id: 'mine',
         version: '1.0.0',
         intercept: -1,
-        coefficients: { hasMx: 2, knownProvider: 1 },
+        coefficients: { hasMx: 2, knownProvider: 1, hasSpf: undefined },
       },
     };
     expectTypeOf(own).toEqualTypeOf<DnsOptions>();
@@ -303,7 +303,7 @@ describe('the exported shapes', () => {
       id: string;
       version: string;
       intercept: number;
-      coefficients: Partial<Record<ScoreFeature, number>>;
+      coefficients: { [K in ScoreFeature]?: number | undefined };
     }>();
   });
 

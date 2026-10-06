@@ -60,7 +60,7 @@ export interface DnsScore {
 
 // @public
 export interface DnsScoreModel {
-    coefficients: Partial<Record<ScoreFeature, number>>;
+    coefficients: { [K in ScoreFeature]?: number | undefined; };
     // (undocumented)
     id: string;
     // (undocumented)
