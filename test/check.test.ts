@@ -155,10 +155,11 @@ describe('the signals', () => {
         { exchange: 'MX.example.com', priority: 10 },
       ],
     });
-    expect((await signals('ada@example.com')).mxHosts).toEqual([
-      'mx.example.com',
-      'backup.example.com',
-    ]);
+    // A host listed twice isn't a Null MX (validator-dns#48).
+    expect(await signals('ada@example.com')).toMatchObject({
+      nullMx: false,
+      mxHosts: ['mx.example.com', 'backup.example.com'],
+    });
   });
 
   // Out of order, with ties, and a host twice at different preferences.
