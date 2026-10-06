@@ -263,6 +263,50 @@ describe('the options', () => {
     expect(queries).toEqual([]);
   });
 
+  // validator-dns#50: a misspelled option did nothing without saying so.
+  it.each<[string, unknown]>([
+    ['bogus', { bogus: 1 }],
+    // A key throws even when it's set to undefined, as in the other packages.
+    ['bogus', { bogus: undefined }],
+    ['timeout.qeury', { timeout: { qeury: 100 } }],
+    ['smtp.port', { smtp: { port: 587 } }],
+  ])('throw `Unknown option: %s` for a key they don’t have', (key, options) => {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+    expect(() => validator(options as never)).toThrow(
+      new TypeError(`Unknown option: ${key}`),
+    );
+  });
+
+  it('reject a call option a call doesn’t take', async () => {
+    const options = { timeout: { query: 100 } };
+    await expect(
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+      validator().check('ada@example.com', options as never),
+    ).rejects.toThrow(new TypeError('Unknown option: timeout'));
+    expect(queries).toEqual([]);
+  });
+
+  it('take every option set to undefined', async () => {
+    zone.set('example.com', { MX: mx('mx.example.com') });
+    const dns = createDnsValidator({
+      syntax: undefined,
+      timeout: { query: undefined, overall: undefined },
+      signal: undefined,
+      smtp: {
+        ports: undefined,
+        ehloName: undefined,
+        timeout: undefined,
+        untilAccepted: undefined,
+      },
+      scoreModel: undefined,
+      resolver: promises,
+      cacheTtl: undefined,
+    });
+    expect(
+      await dns.check('ada@example.com', { signal: undefined }),
+    ).toMatchObject({ ok: true });
+  });
+
   it('take a longest budget and a TTL of Infinity', () => {
     expect(() =>
       createDnsValidator({
