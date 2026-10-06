@@ -268,7 +268,7 @@ function hostsOf(answer: Extract<Lookup<'MX'>, { ok: true }>): Readonly<Hosts> {
     exchange.toLowerCase().replace(/\.$/, ''),
   );
   const mxHosts = [...new Set(hosts.filter((host) => host !== ''))];
-  const found = { mxHosts, nullMx: mxHosts.length < hosts.length };
+  const found = { mxHosts, nullMx: hosts.includes('') };
   hostsByAnswer.set(answer, found);
   return found;
 }
