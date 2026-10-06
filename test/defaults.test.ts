@@ -137,17 +137,18 @@ describe('scoreDns', () => {
   });
 });
 
+const functions: readonly [
+  string,
+  (input: string, options?: DnsOptions) => Promise<unknown>,
+][] = [
+  ['checkDns', checkDns],
+  ['isValidDns', isValidDns],
+  ['detectProviderByMx', detectProviderByMx],
+  ['probeSmtp', probeSmtp],
+  ['scoreDns', scoreDns],
+];
+
 describe('the input cap', () => {
-  const functions: readonly [
-    string,
-    (input: string, options?: DnsOptions) => Promise<unknown>,
-  ][] = [
-    ['checkDns', checkDns],
-    ['isValidDns', isValidDns],
-    ['detectProviderByMx', detectProviderByMx],
-    ['probeSmtp', probeSmtp],
-    ['scoreDns', scoreDns],
-  ];
   // The default, from the rules every call without options shares, and a
   // lower and a higher `syntax.maxLength`, resolved with the call's options.
   const cases = functions.flatMap(([name, fn]) =>
@@ -203,6 +204,50 @@ describe('the input cap', () => {
       message: 'The local part is longer than 64 characters',
     });
     expect(queries).toEqual([]);
+  });
+});
+
+describe('unknown options', () => {
+  // validator-dns#50: a misspelled option did nothing without saying so.
+  it.each(
+    functions.flatMap(([name, fn]) =>
+      (
+        [
+          ['timout', { timout: { query: 100 } }],
+          ['timeout.qeury', { timeout: { qeury: 100 } }],
+          ['smtp.port', { smtp: { port: 587 } }],
+          // A validator's options, which these functions don't take.
+          ['cacheTtl', { cacheTtl: 0 }],
+        ] as const
+      ).map(([key, options]) => ({ name, fn, key, options })),
+    ),
+  )(
+    '$name rejects with `Unknown option: $key`',
+    async ({ fn, key, options }) => {
+      await expect(
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+        fn('ada@unknown.example.com', options as never),
+      ).rejects.toThrow(new TypeError(`Unknown option: ${key}`));
+      expect(queries).toEqual([]);
+    },
+  );
+
+  it('takes every option set to undefined', async () => {
+    zone.set('undefined.example.com', { MX: mx('mx.example.com') });
+    expect(
+      await checkDns('ada@undefined.example.com', {
+        syntax: undefined,
+        timeout: { query: undefined, overall: undefined },
+        signal: undefined,
+        smtp: {
+          ports: undefined,
+          ehloName: undefined,
+          timeout: undefined,
+          untilAccepted: undefined,
+        },
+        scoreModel: undefined,
+      }),
+    ).toMatchObject({ ok: true });
   });
 });
 

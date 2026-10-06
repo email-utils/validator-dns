@@ -16,6 +16,7 @@ import {
   type DnsValidatorOptions,
   resolve,
   resolveCache,
+  validatorOptionNames,
   type Rules,
 } from './options';
 import type { Result } from './result';
@@ -94,8 +95,8 @@ function sharedLookups(): Lookups {
  * ```
  *
  * @throws TypeError, as a rejection, when `emailOrDomain` isn't a string,
- * or `options` are malformed. When `options.signal` aborts, it rejects
- * with the signal's `reason`.
+ * or `options` are malformed or name an option that doesn't exist. When
+ * `options.signal` aborts, it rejects with the signal's `reason`.
  */
 export async function checkDns(
   emailOrDomain: string,
@@ -118,8 +119,8 @@ export async function checkDns(
  * ```
  *
  * @throws TypeError, as a rejection, when `emailOrDomain` isn't a string,
- * or `options` are malformed. When `options.signal` aborts, it rejects
- * with the signal's `reason`.
+ * or `options` are malformed or name an option that doesn't exist. When
+ * `options.signal` aborts, it rejects with the signal's `reason`.
  */
 export async function isValidDns(
   emailOrDomain: string,
@@ -160,8 +161,8 @@ export async function isValidDns(
  * ```
  *
  * @throws TypeError, as a rejection, when `emailOrDomain` isn't a string,
- * or `options` are malformed. When `options.signal` aborts, it rejects
- * with the signal's `reason`.
+ * or `options` are malformed or name an option that doesn't exist. When
+ * `options.signal` aborts, it rejects with the signal's `reason`.
  */
 export async function detectProviderByMx(
   emailOrDomain: string,
@@ -202,8 +203,9 @@ export async function detectProviderByMx(
  * ```
  *
  * @throws TypeError, as a rejection, when `emailOrDomain` isn't a string,
- * or `options` are malformed. When `options.signal` aborts, it closes the
- * connections and rejects with the signal's `reason`.
+ * or `options` are malformed or name an option that doesn't exist. When
+ * `options.signal` aborts, it closes the connections and rejects with the
+ * signal's `reason`.
  */
 export async function probeSmtp(
   emailOrDomain: string,
@@ -274,8 +276,8 @@ export async function probeSmtp(
  * ```
  *
  * @throws TypeError, as a rejection, when `emailOrDomain` isn't a string,
- * or `options` are malformed. When `options.signal` aborts, it rejects
- * with the signal's `reason`.
+ * or `options` are malformed or name an option that doesn't exist. When
+ * `options.signal` aborts, it rejects with the signal's `reason`.
  */
 export async function scoreDns(
   emailOrDomain: string,
@@ -292,8 +294,9 @@ export interface DnsValidator {
    * {@link checkDns} with the validator's options.
    *
    * @throws TypeError, as a rejection, when `emailOrDomain` isn't a string,
-   * or `options` are malformed. When the validator's signal or
-   * `options.signal` aborts, it rejects with the signal's `reason`.
+   * or `options` are malformed or name an option that doesn't exist. When
+   * the validator's signal or `options.signal` aborts, it rejects with the
+   * signal's `reason`.
    */
   check(
     emailOrDomain: string,
@@ -303,8 +306,9 @@ export interface DnsValidator {
    * Exactly `(await check(emailOrDomain, options)).ok`.
    *
    * @throws TypeError, as a rejection, when `emailOrDomain` isn't a string,
-   * or `options` are malformed. When the validator's signal or
-   * `options.signal` aborts, it rejects with the signal's `reason`.
+   * or `options` are malformed or name an option that doesn't exist. When
+   * the validator's signal or `options.signal` aborts, it rejects with the
+   * signal's `reason`.
    */
   isValid(emailOrDomain: string, options?: DnsCallOptions): Promise<boolean>;
   /**
@@ -312,8 +316,9 @@ export interface DnsValidator {
    * MX answers with `check`.
    *
    * @throws TypeError, as a rejection, when `emailOrDomain` isn't a string,
-   * or `options` are malformed. When the validator's signal or
-   * `options.signal` aborts, it rejects with the signal's `reason`.
+   * or `options` are malformed or name an option that doesn't exist. When
+   * the validator's signal or `options.signal` aborts, it rejects with the
+   * signal's `reason`.
    */
   detectProviderByMx(
     emailOrDomain: string,
@@ -324,9 +329,9 @@ export interface DnsValidator {
    * with `check`.
    *
    * @throws TypeError, as a rejection, when `emailOrDomain` isn't a string,
-   * or `options` are malformed. When the validator's signal or
-   * `options.signal` aborts, it closes the connections and rejects with
-   * the signal's `reason`.
+   * or `options` are malformed or name an option that doesn't exist. When
+   * the validator's signal or `options.signal` aborts, it closes the
+   * connections and rejects with the signal's `reason`.
    */
   probeSmtp(
     emailOrDomain: string,
@@ -337,8 +342,9 @@ export interface DnsValidator {
    * with `check`.
    *
    * @throws TypeError, as a rejection, when `emailOrDomain` isn't a string,
-   * or `options` are malformed. When the validator's signal or
-   * `options.signal` aborts, it rejects with the signal's `reason`.
+   * or `options` are malformed or name an option that doesn't exist. When
+   * the validator's signal or `options.signal` aborts, it rejects with the
+   * signal's `reason`.
    */
   score(
     emailOrDomain: string,
@@ -386,12 +392,13 @@ export interface DnsValidator {
  * // => { ok: true, value: 'google-workspace' }
  * ```
  *
- * @throws TypeError when `options` are malformed.
+ * @throws TypeError when `options` are malformed or name an option that
+ * doesn't exist.
  */
 export function createDnsValidator(
   options?: DnsValidatorOptions,
 ): DnsValidator {
-  const rules = resolve(options);
+  const rules = resolve(options, validatorOptionNames);
   const lookups = createLookups(resolveCache(options));
   return {
     check: async (emailOrDomain, call) =>

@@ -157,6 +157,43 @@ function isObject(value: unknown): value is object {
   return typeof value === 'object' && value !== null;
 }
 
+/** The keys {@link DnsOptions} has. */
+const optionNames: ReadonlySet<string> = new Set([
+  'syntax',
+  'timeout',
+  'signal',
+  'smtp',
+  'scoreModel',
+]);
+
+/** The keys {@link DnsValidatorOptions} has. */
+export const validatorOptionNames: ReadonlySet<string> = new Set([
+  ...optionNames,
+  'resolver',
+  'cacheTtl',
+]);
+
+const timeoutNames: ReadonlySet<string> = new Set(['query', 'overall']);
+
+const smtpNames: ReadonlySet<string> = new Set([
+  'ports',
+  'ehloName',
+  'timeout',
+  'untilAccepted',
+]);
+
+const callNames: ReadonlySet<string> = new Set(['signal']);
+
+// A key set to `undefined` still has to be one of `names`, as in the
+// other packages.
+function known(options: object, names: ReadonlySet<string>, prefix = ''): void {
+  for (const key of Object.keys(options)) {
+    if (!names.has(key)) {
+      throw new TypeError(`Unknown option: ${prefix}${key}`);
+    }
+  }
+}
+
 function budget(value: unknown, name: string, fallback: number): number {
   if (value === undefined) {
     return fallback;
@@ -182,6 +219,7 @@ function probe(smtp: SmtpOptions): ProbeRules {
   if (!isObject(smtp)) {
     throw new TypeError('Expected `smtp` to be an object');
   }
+  known(smtp, smtpNames, 'smtp.');
   const ports: unknown = smtp.ports ?? [25];
   const name: unknown = smtp.ehloName;
   if (!Array.isArray(ports) || ports.length === 0 || !ports.every(isPort)) {
@@ -236,18 +274,25 @@ function signal(value: unknown, name: string): AbortSignal | undefined {
 }
 
 /**
- * Checks `options` and resolves them into {@link Rules}.
+ * Checks `options` and resolves them into {@link Rules}. `names` are the
+ * keys `options` may have: {@link validatorOptionNames} for a validator's.
  *
- * @throws TypeError when `options` are malformed.
+ * @throws TypeError when `options` are malformed or name an option that
+ * doesn't exist.
  */
-export function resolve(options: DnsOptions = {}): Rules {
+export function resolve(
+  options: DnsOptions = {},
+  names: ReadonlySet<string> = optionNames,
+): Rules {
   if (!isObject(options)) {
     throw new TypeError('Expected `options` to be an object');
   }
+  known(options, names);
   const { syntax = {}, timeout = {}, smtp = {}, scoreModel } = options;
   if (!isObject(timeout)) {
     throw new TypeError('Expected `timeout` to be an object');
   }
+  known(timeout, timeoutNames, 'timeout.');
   return {
     // Anything but an object goes through as is, so validator-syntax throws
     // its own TypeError for it.
@@ -295,7 +340,8 @@ export function resolveCache(options: DnsValidatorOptions = {}): Cache {
 /**
  * The signals that abort one call: the validator's own and the call's.
  *
- * @throws TypeError when `call` is malformed.
+ * @throws TypeError when `call` is malformed or names an option that
+ * doesn't exist.
  */
 export function signalsFor(
   rules: Readonly<Rules>,
@@ -304,6 +350,7 @@ export function signalsFor(
   if (!isObject(call)) {
     throw new TypeError('Expected `options` to be an object');
   }
+  known(call, callNames);
   return [rules.signal, signal(call.signal, 'signal')].filter(
     (value) => value !== undefined,
   );
